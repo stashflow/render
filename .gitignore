@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+.DS_Store
+luls_rng_save.json
+.env
