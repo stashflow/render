@@ -57,6 +57,26 @@ NEON_URL = os.getenv("LULSRNG_DB_URL", (
 ))
 SAVE_FILE  = os.path.join(os.path.dirname(__file__), "luls_rng_save.json")  # local fallback
 GAME_TITLE = "LUL'S RNG"
+ONLINE_CFG_FILE = os.path.join(os.path.dirname(__file__), "online_client_config.json")
+
+
+def load_online_api_config():
+    """Resolve API mode config from env first, then local config file."""
+    base = os.getenv("LULSRNG_API_BASE", "").strip()
+    token = os.getenv("LULSRNG_API_TOKEN", "").strip()
+    if base:
+        return base, token
+    try:
+        if os.path.exists(ONLINE_CFG_FILE):
+            with open(ONLINE_CFG_FILE, "r", encoding="utf-8") as f:
+                cfg = json.load(f) or {}
+            base = str(cfg.get("api_base", "")).strip()
+            token = str(cfg.get("api_token", "")).strip()
+            if base:
+                return base, token
+    except Exception:
+        pass
+    return "", ""
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  GAME DATA
@@ -1778,9 +1798,9 @@ class LulsRNG(ctk.CTk):
         super().__init__()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.withdraw()   # hide until login done
-        api_base = os.getenv("LULSRNG_API_BASE", "").strip()
+        api_base, api_token = load_online_api_config()
         if api_base:
-            self.db = HttpDatabase(api_base, os.getenv("LULSRNG_API_TOKEN", "").strip())
+            self.db = HttpDatabase(api_base, api_token)
             print(f"[NET] API mode enabled: {api_base}")
         else:
             self.db = Database()

@@ -64,6 +64,19 @@ export LULSRNG_API_TOKEN="YOUR_TOKEN"
 python3 lulsrng1.1.py
 ```
 
+## 3.1) Fully Automated Client Launch
+
+This repo now includes:
+
+- `online_client_config.json` (prefilled API base/token)
+- `run_online_windows.bat` (double-click to launch online mode on Windows)
+- `run_online_mac_linux.sh` (launch script for macOS/Linux)
+
+So you can just run:
+
+- Windows: `run_online_windows.bat`
+- macOS/Linux: `./run_online_mac_linux.sh`
+
 ## 4) Important Notes
 
 - Client API mode is automatic when `LULSRNG_API_BASE` is set.
