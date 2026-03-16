@@ -64,18 +64,13 @@ export LULSRNG_API_TOKEN="YOUR_TOKEN"
 python3 lulsrng1.1.py
 ```
 
-## 3.1) Fully Automated Client Launch
+## 3.1) Direct Run (No Scripts Needed)
 
-This repo now includes:
+`lulsrng1.1.py` now includes built-in API defaults and also reads
+`online_client_config.json`, so you can launch it directly:
 
-- `online_client_config.json` (prefilled API base/token)
-- `run_online_windows.bat` (double-click to launch online mode on Windows)
-- `run_online_mac_linux.sh` (launch script for macOS/Linux)
-
-So you can just run:
-
-- Windows: `run_online_windows.bat`
-- macOS/Linux: `./run_online_mac_linux.sh`
+- Windows: `python lulsrng1.1.py` (or `py lulsrng1.1.py`)
+- macOS/Linux: `python3 lulsrng1.1.py`
 
 ## 4) Important Notes
 

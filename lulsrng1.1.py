@@ -58,10 +58,12 @@ NEON_URL = os.getenv("LULSRNG_DB_URL", (
 SAVE_FILE  = os.path.join(os.path.dirname(__file__), "luls_rng_save.json")  # local fallback
 GAME_TITLE = "LUL'S RNG"
 ONLINE_CFG_FILE = os.path.join(os.path.dirname(__file__), "online_client_config.json")
+DEFAULT_API_BASE = "https://render-47ff.onrender.com"
+DEFAULT_API_TOKEN = "04ea193ec0537156f012b0f3a82f86a8"
 
 
 def load_online_api_config():
-    """Resolve API mode config from env first, then local config file."""
+    """Resolve API mode config from env, then local file, then built-in defaults."""
     base = os.getenv("LULSRNG_API_BASE", "").strip()
     token = os.getenv("LULSRNG_API_TOKEN", "").strip()
     if base:
@@ -76,7 +78,7 @@ def load_online_api_config():
                 return base, token
     except Exception:
         pass
-    return "", ""
+    return DEFAULT_API_BASE, DEFAULT_API_TOKEN
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  GAME DATA
