@@ -289,9 +289,13 @@ class Database:
             return False, "Wrong password"
         return True, PlayerState.from_dict(row["data"])
 
-    def save_player(self, username: str, state: PlayerState):
+    def save_player(self, username: str, state):
         if not self.conn or not username:
             return False
+        if isinstance(state, dict):
+            state = PlayerState.from_dict(state)
+        elif not isinstance(state, PlayerState):
+            state = PlayerState()
         ok = self._exec(
             "UPDATE players SET data=%s, last_seen=NOW() WHERE username=%s",
             (json.dumps(state.to_dict()), username)
@@ -361,6 +365,41 @@ class Database:
         return {"username": row["username"], "data": row["data"]}
 
     def send_battle_request(self, challenger: str, defender: str, wager_coins: int, wager_shards: int):
+        if not challenger or not defender:
+            return False, "Invalid challenger/defender."
+        if challenger == defender:
+            return False, "Cannot battle yourself."
+        wager_coins = max(0, int(wager_coins or 0))
+        wager_shards = max(0, int(wager_shards or 0))
+
+        # Hard anti-spam guardrail: one request every 5 seconds per challenger.
+        recent = self._exec(
+            "SELECT id FROM battle_requests WHERE challenger=%s "
+            "AND created_at > NOW() - INTERVAL '5 seconds' "
+            "ORDER BY created_at DESC LIMIT 1",
+            (challenger,), fetch="one"
+        )
+        if recent:
+            return False, "You're sending battle requests too fast. Wait a few seconds."
+
+        # Keep queue bounded to avoid inbox spam.
+        pending_total = self._exec(
+            "SELECT COUNT(*)::int AS c FROM battle_requests WHERE challenger=%s AND status='pending'",
+            (challenger,), fetch="one"
+        )
+        if pending_total and int(pending_total.get("c", 0) or 0) >= 5:
+            return False, "Too many pending requests. Wait for responses first."
+
+        # Avoid duplicate or mirrored pending battles for the same pair.
+        pair_pending = self._exec(
+            "SELECT id FROM battle_requests "
+            "WHERE status='pending' AND ((challenger=%s AND defender=%s) OR (challenger=%s AND defender=%s)) "
+            "LIMIT 1",
+            (challenger, defender, defender, challenger), fetch="one"
+        )
+        if pair_pending:
+            return False, "A pending battle already exists between these players."
+
         existing = self._exec(
             "SELECT id FROM battle_requests WHERE challenger=%s AND defender=%s AND status='pending'",
             (challenger, defender), fetch="one"
