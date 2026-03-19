@@ -185,6 +185,10 @@ class State:
     daily_streak: int = 0
     roll_chests_claimed: int = 0
     pvp_streak: int = 0
+    total_boss_wins: int = 0
+    total_rift_wins: int = 0
+    total_wins: int = 0
+    total_losses: int = 0
     best_rarity: str = "Common"
     inventory: Dict[str, int] = field(default_factory=dict)
     collection: List[str] = field(default_factory=list)
@@ -209,6 +213,10 @@ class State:
             "daily_streak": self.daily_streak,
             "roll_chests_claimed": self.roll_chests_claimed,
             "pvp_streak": self.pvp_streak,
+            "total_boss_wins": self.total_boss_wins,
+            "total_rift_wins": self.total_rift_wins,
+            "total_wins": self.total_wins,
+            "total_losses": self.total_losses,
             "best_rarity": self.best_rarity,
             "highest_rarity_pulled": self.best_rarity,
             "equipped_title": equipped,
@@ -238,6 +246,10 @@ class State:
         s.daily_streak = max(0, int(d.get("daily_streak", 0)))
         s.roll_chests_claimed = max(0, int(d.get("roll_chests_claimed", 0)))
         s.pvp_streak = max(0, int(d.get("pvp_streak", 0)))
+        s.total_boss_wins = max(0, int(d.get("total_boss_wins", 0)))
+        s.total_rift_wins = max(0, int(d.get("total_rift_wins", 0)))
+        s.total_wins = max(0, int(d.get("total_wins", 0)))
+        s.total_losses = max(0, int(d.get("total_losses", 0)))
 
         br = str(d.get("best_rarity", d.get("highest_rarity_pulled", "Common")))
         s.best_rarity = br if br in RARITY_ORDER else "Common"
@@ -491,6 +503,8 @@ class CloudApi:
         self._next_reconnect = 0.0
         self._backoff = 2.0
         self._tls_unverified = False
+        self.db_connected: Optional[bool] = None
+        self.db_error: str = ""
         self._ssl = self._make_ssl()
         self.reconnect(force=True)
 
@@ -528,6 +542,13 @@ class CloudApi:
         try:
             with self._open(req, timeout=8) as resp:
                 if resp.status == 200:
+                    try:
+                        body = json.loads(resp.read().decode("utf-8") or "{}")
+                        self.db_connected = bool(body.get("db_connected", False))
+                        self.db_error = str(body.get("db_error", "") or "")
+                    except Exception:
+                        self.db_connected = None
+                        self.db_error = ""
                     self.connected = True
                     self.last_error = ""
                     self._backoff = 2.0
@@ -1009,6 +1030,20 @@ class LulsRNG2(ctk.CTk):
 
         self.online_state = ctk.CTkLabel(wrap, text="Cloud idle", text_color=MUTED)
         self.online_state.pack(anchor="w", padx=14)
+
+        boss = ctk.CTkFrame(wrap, fg_color=BG, corner_radius=10, border_width=1, border_color=BORDER)
+        boss.pack(fill="x", padx=12, pady=(6, 6))
+        brow = ctk.CTkFrame(boss, fg_color="transparent")
+        brow.pack(fill="x", padx=10, pady=8)
+        ctk.CTkLabel(brow, text="Boss Race Event", text_color=TEXT, font=("Segoe UI", 14, "bold")).pack(side="left")
+        ctk.CTkButton(brow, text="Refresh Event", width=110, fg_color=ACCENT, hover_color=ACCENT2, command=self._refresh_boss_race).pack(side="right", padx=4)
+        self.boss_state = ctk.CTkLabel(boss, text="No active event fetched yet.", text_color=MUTED)
+        self.boss_state.pack(anchor="w", padx=12, pady=(0, 8))
+        self.btn_claim_boss = ctk.CTkButton(boss, text="Claim Boss Win", width=140, fg_color=RED, hover_color="#dc2626", command=self._claim_boss_race)
+        self.btn_claim_boss.pack(anchor="w", padx=12, pady=(0, 10))
+        self.btn_claim_boss.configure(state="disabled")
+        self._boss_event_id = None
+
         self.online_list = ctk.CTkScrollableFrame(wrap, fg_color=BG, corner_radius=10)
         self.online_list.pack(fill="both", expand=True, padx=12, pady=12)
 
@@ -1128,11 +1163,21 @@ class LulsRNG2(ctk.CTk):
             self._sync_state()
 
     # -------------------------- cloud ops --------------------------
+    def _cloud_state_payload(self, state_dict: dict) -> dict:
+        # Backward-compatible with older API builds that expect decoded PlayerState objects.
+        return {"__player_state__": state_dict}
+
+    def _save_cloud_state(self, username: str, state_dict: dict) -> bool:
+        if not self.online_enabled or not username:
+            return False
+        res = self.api.rpc("save_player", username, self._cloud_state_payload(state_dict))
+        return bool(res)
+
     def _sync_state(self):
         if not self.online_enabled or not self.username:
             return
         st = self.engine.s.to_dict()
-        self.bus.run(lambda: self.api.rpc("save_player", self.username, st), lambda ok, res: self._set_cloud_label())
+        self.bus.run(lambda: self._save_cloud_state(self.username, st), lambda ok, res: self._set_cloud_label())
 
     def _post_roll(self, title: str, rarity: str):
         self.bus.run(lambda: self.api.rpc("post_roll", self.username, title, rarity), lambda ok, res: None)
@@ -1152,10 +1197,12 @@ class LulsRNG2(ctk.CTk):
             u = str(r.get("username", "?"))
             t = str(r.get("title", "Unknown"))
             rr = str(r.get("rarity", "Common"))
+            rolled_at = str(r.get("rolled_at", "") or "")
             row = ctk.CTkFrame(self.recent_rolls, fg_color=WHITE, corner_radius=8, border_width=1, border_color=BORDER)
             row.pack(fill="x", padx=2, pady=2)
             ctk.CTkLabel(row, text=u, text_color=TEXT, width=140, anchor="w").pack(side="left", padx=8, pady=6)
             ctk.CTkLabel(row, text=t, text_color=TEXT, anchor="w").pack(side="left", padx=8)
+            ctk.CTkLabel(row, text=rolled_at[:19].replace("T", " "), text_color=MUTED, width=150).pack(side="right", padx=4)
             ctk.CTkLabel(row, text=rr, text_color=RARITY_COLOR.get(rr, MUTED), width=100).pack(side="right", padx=8)
 
     def _refresh_online(self):
@@ -1164,6 +1211,7 @@ class LulsRNG2(ctk.CTk):
             return
         self.online_state.configure(text="Loading online players...", text_color=MUTED)
         self.bus.run(lambda: (self.api.rpc("get_online_players"), self.api.last_error), self._render_online_done)
+        self._refresh_boss_race()
 
     def _render_online_done(self, ok: bool, result):
         rows, err = (result if isinstance(result, tuple) else (None, "Unknown error"))
@@ -1181,12 +1229,13 @@ class LulsRNG2(ctk.CTk):
             lv = r.get("level", "?")
             rr = str(r.get("rarity", "Common"))
             eq = str(r.get("equipped_title", ""))
+            seen = str(r.get("last_seen", "") or "")
             row = ctk.CTkFrame(self.online_list, fg_color=WHITE, corner_radius=8, border_width=1, border_color=BORDER)
             row.pack(fill="x", padx=4, pady=4)
             left = ctk.CTkFrame(row, fg_color="transparent")
             left.pack(side="left", fill="x", expand=True, padx=10, pady=8)
             ctk.CTkLabel(left, text=u, text_color=TEXT, font=("Segoe UI", 14, "bold")).pack(anchor="w")
-            sub = f"Lv {lv}  •  {rr}" + (f"  •  {eq}" if eq and eq != "None" else "")
+            sub = f"Lv {lv}  •  {rr}" + (f"  •  {eq}" if eq and eq != "None" else "") + (f"  •  seen {seen[:19].replace('T',' ')}" if seen else "")
             ctk.CTkLabel(left, text=sub, text_color=RARITY_COLOR.get(rr, MUTED), font=("Segoe UI", 12)).pack(anchor="w")
             ctk.CTkButton(row, text="Battle", width=90, fg_color=RED, hover_color="#dc2626", command=lambda x=u: self._prefill_battle(x)).pack(side="right", padx=8)
 
@@ -1194,6 +1243,58 @@ class LulsRNG2(ctk.CTk):
         if not self.online_enabled:
             return
         self.bus.run(lambda: self.api.rpc("get_leaderboard"), self._render_leaderboard_done)
+
+    def _refresh_boss_race(self):
+        if not self.online_enabled:
+            if hasattr(self, "boss_state"):
+                self.boss_state.configure(text="Offline mode: no boss race.", text_color=RED)
+            return
+        if hasattr(self, "boss_state"):
+            self.boss_state.configure(text="Loading boss race...", text_color=MUTED)
+        self.bus.run(lambda: self.api.rpc("get_active_boss_race"), self._render_boss_race_done)
+
+    def _render_boss_race_done(self, ok: bool, row):
+        if not hasattr(self, "boss_state"):
+            return
+        if not row:
+            self._boss_event_id = None
+            self.boss_state.configure(text="No active boss race event.", text_color=MUTED)
+            self.btn_claim_boss.configure(state="disabled")
+            return
+        self._boss_event_id = int(row.get("id", 0) or 0)
+        boss_id = str(row.get("boss_id", "unknown"))
+        ends = str(row.get("ends_at", "unknown"))
+        winner = row.get("winner")
+        if winner:
+            txt = f"{boss_id} • Ends {ends} • Winner: {winner}"
+            col = GREEN
+            self.btn_claim_boss.configure(state="disabled")
+        else:
+            txt = f"{boss_id} • Ends {ends} • Winner: unclaimed"
+            col = AMBER
+            self.btn_claim_boss.configure(state="normal")
+        self.boss_state.configure(text=txt, text_color=col)
+
+    def _claim_boss_race(self):
+        if not self.online_enabled or not self.username:
+            return
+        if not self._boss_event_id:
+            self.boss_state.configure(text="No active boss event to claim.", text_color=RED)
+            return
+        eid = int(self._boss_event_id)
+        self.bus.run(lambda: self.api.rpc("claim_boss_race", eid, self.username), self._after_claim_boss)
+
+    def _after_claim_boss(self, ok: bool, res):
+        if res:
+            self.engine.s.total_boss_wins += 1
+            self.engine.s.coins += 500
+            self.engine.s.shards += 3
+            self.engine.save_local()
+            self._sync_state()
+            self.boss_state.configure(text="Boss race claimed: +500c +3 shards.", text_color=GREEN)
+        else:
+            self.boss_state.configure(text=f"Claim failed: {self.api.last_error}", text_color=RED)
+        self._refresh_boss_race()
 
     def _render_leaderboard_done(self, ok: bool, rows):
         for w in self.lb_list.winfo_children():
@@ -1208,11 +1309,15 @@ class LulsRNG2(ctk.CTk):
             u = str(r.get("username", "Unknown"))
             score = int(r.get("score", 0) or 0)
             rr = str(r.get("rarity", "Common"))
+            lv = int(r.get("level", 0) or 0)
+            reb = int(r.get("rebirths", 0) or 0)
+            pw = int(r.get("pvp_wins", 0) or 0)
             row = ctk.CTkFrame(self.lb_list, fg_color=WHITE, corner_radius=8, border_width=1, border_color=BORDER)
             row.pack(fill="x", padx=4, pady=3)
             ctk.CTkLabel(row, text=f"#{i}", text_color=PINK, width=60).pack(side="left", padx=6, pady=6)
             ctk.CTkLabel(row, text=u, text_color=TEXT, width=220, anchor="w").pack(side="left")
             ctk.CTkLabel(row, text=rr, text_color=RARITY_COLOR.get(rr, MUTED), width=120).pack(side="left")
+            ctk.CTkLabel(row, text=f"Lv{lv} R{reb} PvP{pw}", text_color=MUTED, width=140).pack(side="left")
             ctk.CTkLabel(row, text=f"{score:,}", text_color=ACCENT, width=130).pack(side="right", padx=10)
 
     def _refresh_pvp(self):
@@ -1482,8 +1587,8 @@ class LulsRNG2(ctk.CTk):
                 sender_state.collection.append(want_t)
 
             self.engine.save_local()
-            ok_self = bool(self.api.rpc("save_player", self.username, self.engine.s.to_dict()))
-            ok_sender = bool(self.api.rpc("save_player", sender, sender_state.to_dict()))
+            ok_self = self._save_cloud_state(self.username, self.engine.s.to_dict())
+            ok_sender = self._save_cloud_state(sender, sender_state.to_dict())
             ok_resolve = bool(self.api.rpc("resolve_trade", tid))
             if not (ok_self and ok_sender and ok_resolve):
                 return False, f"Trade sync failed: {self.api.last_error}"
@@ -1566,8 +1671,8 @@ class LulsRNG2(ctk.CTk):
                 opp_state.coins += wager_coins
 
             self.engine.save_local()
-            ok_self = bool(self.api.rpc("save_player", self.username, self.engine.s.to_dict()))
-            ok_opp = bool(self.api.rpc("save_player", challenger, opp_state.to_dict()))
+            ok_self = self._save_cloud_state(self.username, self.engine.s.to_dict())
+            ok_opp = self._save_cloud_state(challenger, opp_state.to_dict())
             ok_resolve = bool(self.api.rpc("resolve_battle", req_id, result, self.username if won else challenger))
             if not (ok_self and ok_opp and ok_resolve):
                 return False, f"Cloud save/resolve failed: {self.api.last_error}"
@@ -1600,9 +1705,11 @@ class LulsRNG2(ctk.CTk):
             self.engine.s.pvp_streak += 1
             streak_bonus = min(120, self.engine.s.pvp_streak * 10)
             self.engine.s.coins += streak_bonus
+            self.engine.s.total_wins += 1
             self.pvp_msg.configure(text=f"Battle resolved and synced. Win streak {self.engine.s.pvp_streak} (+{streak_bonus}c).", text_color=GREEN)
         else:
             self.engine.s.pvp_streak = 0
+            self.engine.s.total_losses += 1
             self.pvp_msg.configure(text="Battle resolved and synced. Streak reset.", text_color=GREEN)
         self.engine.save_local()
         self._refresh_all()
@@ -1640,10 +1747,13 @@ class LulsRNG2(ctk.CTk):
             return
         if self.api.connected:
             mode = "compat TLS" if self.api._tls_unverified else "secure TLS"
+            db_part = ""
+            if self.api.db_connected is not None:
+                db_part = " • DB ok" if self.api.db_connected else f" • DB issue: {self.api.db_error or 'unknown'}"
             if self.api.last_error:
-                self.lbl_cloud.configure(text=f"Cloud: reachable ({mode}) • API issue: {self.api.last_error}", text_color=AMBER)
+                self.lbl_cloud.configure(text=f"Cloud: reachable ({mode}){db_part} • API issue: {self.api.last_error}", text_color=AMBER)
             else:
-                self.lbl_cloud.configure(text=f"Cloud: connected ({mode})", text_color=GREEN)
+                self.lbl_cloud.configure(text=f"Cloud: connected ({mode}){db_part}", text_color=GREEN)
         else:
             self.lbl_cloud.configure(text=f"Cloud: disconnected ({self.api.last_error})", text_color=RED)
 
@@ -1668,6 +1778,7 @@ class LulsRNG2(ctk.CTk):
                     self._refresh_pvp()
                 elif tab == "🌍 Online":
                     self._refresh_online()
+                    self._refresh_boss_race()
                 elif tab == "🏆 Leaderboard":
                     self._refresh_leaderboard()
                 elif tab == "🎲 Roll":
@@ -1681,6 +1792,7 @@ class LulsRNG2(ctk.CTk):
         tab = self.tabs.get()
         if tab == "🌍 Online":
             self._refresh_online()
+            self._refresh_boss_race()
         elif tab == "🏆 Leaderboard":
             self._refresh_leaderboard()
         elif tab == "⚔ PvP":
@@ -1734,6 +1846,10 @@ class LulsRNG2(ctk.CTk):
                 f"PvP wins:       {s.pvp_wins}\n"
                 f"PvP losses:     {s.pvp_losses}\n"
                 f"PvP streak:     {s.pvp_streak}\n"
+                f"Arena wins:     {s.total_wins}\n"
+                f"Arena losses:   {s.total_losses}\n"
+                f"Boss wins:      {s.total_boss_wins}\n"
+                f"Rift wins:      {s.total_rift_wins}\n"
                 f"Collection:     {len(s.collection)} / {sum(len(v) for v in TITLES.values())}\n"
             )
         )
@@ -1763,7 +1879,7 @@ class LulsRNG2(ctk.CTk):
         try:
             self.engine.save_local()
             if self.online_enabled and self.username:
-                self.api.rpc("save_player", self.username, self.engine.s.to_dict())
+                self._save_cloud_state(self.username, self.engine.s.to_dict())
         except Exception as e:
             log_exc("on_close save", e)
         self.destroy()
