@@ -71,11 +71,14 @@ BORDER = "#dbe2ef"
 PITY_SOFT = 25
 PITY_HARD = 35
 LUCKY_SPAN = 10
-LUCKY_BUY_COST = 2500
+LUCKY_BUY_COST = 300
 BATTLE_SEND_COOLDOWN_SEC = 6
 BATTLE_ACTION_COOLDOWN_SEC = 2
 MAX_WAGER_FACTOR = 0.25
 ROLL_CHEST_INTERVAL = 25
+SLOW_TICK_MS = 400
+HEARTBEAT_MS = 3000
+LIVE_REFRESH_MS = 2500
 
 
 def log_line(msg: str):
@@ -384,12 +387,7 @@ class Engine:
             self.s.lucky_rolls_remaining = LUCKY_SPAN
             self.save_local()
             return True, f"Lucky aura active for {LUCKY_SPAN} rolls."
-        if self.s.coins < LUCKY_BUY_COST:
-            return False, f"Need {LUCKY_BUY_COST:,} coins or 1 lucky charge."
-        self.s.coins -= LUCKY_BUY_COST
-        self.s.lucky_rolls_remaining = max(8, LUCKY_SPAN - 2)
-        self.save_local()
-        return True, f"Lucky aura bought for {LUCKY_BUY_COST:,} coins."
+        return False, "No Lucky charges. Buy one in Shop for 300 coins."
 
     def rebirth_cost(self) -> int:
         return 8000 + self.s.rebirths * 3500
@@ -512,7 +510,7 @@ class CloudApi:
             if ("certificate_verify_failed" in m or "certificate verify failed" in m) and not self._tls_unverified:
                 self._ssl = ssl._create_unverified_context()
                 self._tls_unverified = True
-                log_line("TLS verify failed. Switched to compatibility TLS mode.")
+                # Quiet fallback: compatibility TLS is expected on some school/home setups.
                 return urlopen(req, timeout=timeout, context=self._ssl)
             raise
 
@@ -714,7 +712,8 @@ class LulsRNG2(ctk.CTk):
 
         self._build_shell()
         self.after(40, self._drain_async)
-        self.after(1000, self._slow_tick)
+        self.after(SLOW_TICK_MS, self._slow_tick)
+        self.after(LIVE_REFRESH_MS, self._live_refresh_tick)
 
         LoginWindow(self, self.api, self._on_auth_done)
 
@@ -767,12 +766,14 @@ class LulsRNG2(ctk.CTk):
             text_color=TEXT,
         )
         self.tabs.pack(fill="both", expand=True, padx=10, pady=(0, 10))
-        for name in ["🎲 Roll", "🎒 Inventory", "⚔ PvP", "🌍 Online", "🏆 Leaderboard", "♻ Rebirth", "📈 Stats"]:
+        for name in ["🎲 Roll", "🎒 Inventory", "✨ Rarities", "🛒 Shop", "⚔ PvP", "🌍 Online", "🏆 Leaderboard", "♻ Rebirth", "📈 Stats"]:
             self.tabs.add(name)
         self.tabs.configure(command=self._tab_changed)
 
         self._build_roll()
         self._build_inventory()
+        self._build_rarities()
+        self._build_shop()
         self._build_pvp()
         self._build_online()
         self._build_leaderboard()
@@ -813,6 +814,108 @@ class LulsRNG2(ctk.CTk):
         self.inv_list = ctk.CTkScrollableFrame(tab, fg_color=WHITE, corner_radius=12, border_width=1, border_color=BORDER)
         self.inv_list.pack(fill="both", expand=True, padx=16, pady=16)
 
+    def _build_rarities(self):
+        tab = self.tabs.tab("✨ Rarities")
+        wrap = ctk.CTkFrame(tab, fg_color=WHITE, corner_radius=12, border_width=1, border_color=BORDER)
+        wrap.pack(fill="both", expand=True, padx=16, pady=16)
+
+        ctk.CTkLabel(wrap, text="Rarity Index", text_color=TEXT, font=("Segoe UI", 28, "bold")).pack(anchor="w", padx=14, pady=(12, 2))
+        ctk.CTkLabel(
+            wrap,
+            text="Base odds, power, and coin values. Live odds below include pity/lucky modifiers.",
+            text_color=MUTED,
+            font=("Segoe UI", 12),
+        ).pack(anchor="w", padx=14, pady=(0, 8))
+
+        self.rarity_meta = ctk.CTkLabel(wrap, text="", text_color=MUTED, font=("Segoe UI", 12, "bold"))
+        self.rarity_meta.pack(anchor="w", padx=14, pady=(0, 8))
+
+        table = ctk.CTkScrollableFrame(wrap, fg_color=BG, corner_radius=10, border_width=1, border_color=BORDER)
+        table.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+        self.rarity_rows = {}
+        total = sum(RARITY_WEIGHT.values()) or 1
+        for r in RARITY_ORDER:
+            base_pct = (RARITY_WEIGHT[r] / total) * 100.0
+            row = ctk.CTkFrame(table, fg_color=WHITE, corner_radius=8, border_width=1, border_color=BORDER)
+            row.pack(fill="x", padx=4, pady=4)
+            ctk.CTkLabel(row, text=r, text_color=RARITY_COLOR.get(r, TEXT), width=130, font=("Segoe UI", 13, "bold")).pack(side="left", padx=8, pady=8)
+            ctk.CTkLabel(row, text=f"Base: {base_pct:.2f}%", text_color=MUTED, width=120).pack(side="left", padx=8)
+            ctk.CTkLabel(row, text=f"Power: {RARITY_POWER[r]}", text_color=ACCENT, width=100).pack(side="left", padx=8)
+            ctk.CTkLabel(row, text=f"Coins: +{RARITY_COINS[r]}", text_color=PINK, width=110).pack(side="left", padx=8)
+            live = ctk.CTkLabel(row, text="Live: -", text_color=TEXT, width=180)
+            live.pack(side="right", padx=10)
+            self.rarity_rows[r] = live
+
+        self._render_rarities()
+
+    def _render_rarities(self):
+        if not hasattr(self, "rarity_rows"):
+            return
+        s = self.engine.s
+        w = self.engine._weights()
+        total = float(sum(w.values()) or 1.0)
+        mods = []
+        if s.pity >= PITY_HARD:
+            mods.append("Hard Pity Active")
+        elif s.pity >= PITY_SOFT:
+            mods.append("Soft Pity Active")
+        if s.lucky_rolls_remaining > 0:
+            mods.append(f"Lucky Aura {s.lucky_rolls_remaining} left")
+        self.rarity_meta.configure(text=f"Current modifiers: {', '.join(mods) if mods else 'None'}")
+        for r in RARITY_ORDER:
+            pct = (w.get(r, 0.0) / total) * 100.0
+            self.rarity_rows[r].configure(text=f"Live: {pct:.2f}%")
+
+    def _build_shop(self):
+        tab = self.tabs.tab("🛒 Shop")
+        wrap = ctk.CTkFrame(tab, fg_color=WHITE, corner_radius=12, border_width=1, border_color=BORDER)
+        wrap.pack(fill="both", expand=True, padx=16, pady=16)
+        ctk.CTkLabel(wrap, text="Shop", text_color=TEXT, font=("Segoe UI", 28, "bold")).pack(anchor="w", padx=14, pady=(12, 6))
+        ctk.CTkLabel(wrap, text="Fast boosts and utility purchases.", text_color=MUTED).pack(anchor="w", padx=14, pady=(0, 10))
+
+        self.shop_msg = ctk.CTkLabel(wrap, text="", text_color=MUTED)
+        self.shop_msg.pack(anchor="w", padx=14, pady=(0, 10))
+
+        card = ctk.CTkFrame(wrap, fg_color=BG, corner_radius=10, border_width=1, border_color=BORDER)
+        card.pack(fill="x", padx=12, pady=6)
+        row = ctk.CTkFrame(card, fg_color="transparent")
+        row.pack(fill="x", padx=12, pady=10)
+        ctk.CTkLabel(row, text="🎲 Lucky Roll Charge", text_color=AMBER, font=("Segoe UI", 14, "bold")).pack(side="left")
+        ctk.CTkLabel(row, text=f"{LUCKY_BUY_COST} coins", text_color=PINK, font=("Segoe UI", 13, "bold")).pack(side="left", padx=12)
+        ctk.CTkButton(row, text="Buy", width=100, fg_color=ACCENT, hover_color=ACCENT2, command=self._buy_lucky_charge).pack(side="right")
+
+        card2 = ctk.CTkFrame(wrap, fg_color=BG, corner_radius=10, border_width=1, border_color=BORDER)
+        card2.pack(fill="x", padx=12, pady=6)
+        row2 = ctk.CTkFrame(card2, fg_color="transparent")
+        row2.pack(fill="x", padx=12, pady=10)
+        ctk.CTkLabel(row2, text="💎 Shard Pack", text_color=ACCENT, font=("Segoe UI", 14, "bold")).pack(side="left")
+        ctk.CTkLabel(row2, text="500 coins", text_color=PINK, font=("Segoe UI", 13, "bold")).pack(side="left", padx=12)
+        ctk.CTkButton(row2, text="Buy +3 Shards", width=130, fg_color=ACCENT, hover_color=ACCENT2, command=self._buy_shard_pack).pack(side="right")
+
+    def _buy_lucky_charge(self):
+        if self.engine.s.coins < LUCKY_BUY_COST:
+            self.shop_msg.configure(text=f"Need {LUCKY_BUY_COST} coins.", text_color=RED)
+            return
+        self.engine.s.coins -= LUCKY_BUY_COST
+        self.engine.s.lucky_rolls += 1
+        self.engine.save_local()
+        self.shop_msg.configure(text=f"Purchased Lucky Roll charge for {LUCKY_BUY_COST} coins.", text_color=GREEN)
+        self._refresh_all()
+        if self.online_enabled:
+            self._sync_state()
+
+    def _buy_shard_pack(self):
+        if self.engine.s.coins < 500:
+            self.shop_msg.configure(text="Need 500 coins.", text_color=RED)
+            return
+        self.engine.s.coins -= 500
+        self.engine.s.shards += 3
+        self.engine.save_local()
+        self.shop_msg.configure(text="Purchased shard pack (+3).", text_color=GREEN)
+        self._refresh_all()
+        if self.online_enabled:
+            self._sync_state()
+
     def _build_pvp(self):
         tab = self.tabs.tab("⚔ PvP")
         wrap = ctk.CTkFrame(tab, fg_color=WHITE, corner_radius=12, border_width=1, border_color=BORDER)
@@ -848,6 +951,44 @@ class LulsRNG2(ctk.CTk):
         ctk.CTkLabel(right, text="Sent Requests", text_color=TEXT, font=("Segoe UI", 15, "bold")).pack(anchor="w", padx=10, pady=(8, 4))
         self.pvp_sent = ctk.CTkScrollableFrame(right, fg_color=BG, corner_radius=8)
         self.pvp_sent.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+
+        social = ctk.CTkFrame(wrap, fg_color=BG, corner_radius=10, border_width=1, border_color=BORDER)
+        social.pack(fill="x", padx=12, pady=(4, 8))
+        srow = ctk.CTkFrame(social, fg_color="transparent")
+        srow.pack(fill="x", padx=10, pady=(8, 4))
+        ctk.CTkLabel(srow, text="Friend:", text_color=TEXT).pack(side="left")
+        self.friend_target = ctk.CTkEntry(srow, width=180, fg_color=WHITE, text_color=TEXT)
+        self.friend_target.pack(side="left", padx=6)
+        ctk.CTkButton(srow, text="Add Friend", width=100, fg_color=ACCENT, hover_color=ACCENT2, command=self._send_friend_request).pack(side="left", padx=6)
+        ctk.CTkLabel(srow, text="Trade To:", text_color=TEXT).pack(side="left", padx=(14, 0))
+        self.trade_target = ctk.CTkEntry(srow, width=150, fg_color=WHITE, text_color=TEXT)
+        self.trade_target.pack(side="left", padx=6)
+
+        trow = ctk.CTkFrame(social, fg_color="transparent")
+        trow.pack(fill="x", padx=10, pady=(0, 8))
+        self.trade_offer_title = ctk.CTkEntry(trow, width=170, fg_color=WHITE, text_color=TEXT, placeholder_text="Offer title")
+        self.trade_offer_title.pack(side="left", padx=4)
+        self.trade_offer_count = ctk.CTkEntry(trow, width=70, fg_color=WHITE, text_color=TEXT, placeholder_text="x")
+        self.trade_offer_count.pack(side="left", padx=4)
+        self.trade_want_title = ctk.CTkEntry(trow, width=170, fg_color=WHITE, text_color=TEXT, placeholder_text="Want title")
+        self.trade_want_title.pack(side="left", padx=4)
+        self.trade_want_count = ctk.CTkEntry(trow, width=70, fg_color=WHITE, text_color=TEXT, placeholder_text="x")
+        self.trade_want_count.pack(side="left", padx=4)
+        ctk.CTkButton(trow, text="Send Trade", width=100, fg_color=ACCENT, hover_color=ACCENT2, command=self._send_trade_request).pack(side="left", padx=6)
+
+        socials = ctk.CTkFrame(wrap, fg_color="transparent")
+        socials.pack(fill="both", expand=True, padx=12, pady=(0, 6))
+        fcol = ctk.CTkFrame(socials, fg_color=BG, corner_radius=10, border_width=1, border_color=BORDER)
+        fcol.pack(side="left", fill="both", expand=True, padx=(0, 6))
+        ctk.CTkLabel(fcol, text="Friends + Requests", text_color=TEXT, font=("Segoe UI", 14, "bold")).pack(anchor="w", padx=8, pady=(6, 2))
+        self.friends_scroll = ctk.CTkScrollableFrame(fcol, fg_color=BG, corner_radius=8, height=120)
+        self.friends_scroll.pack(fill="both", expand=True, padx=8, pady=6)
+
+        tcol = ctk.CTkFrame(socials, fg_color=BG, corner_radius=10, border_width=1, border_color=BORDER)
+        tcol.pack(side="left", fill="both", expand=True, padx=(6, 0))
+        ctk.CTkLabel(tcol, text="Trades", text_color=TEXT, font=("Segoe UI", 14, "bold")).pack(anchor="w", padx=8, pady=(6, 2))
+        self.trade_scroll = ctk.CTkScrollableFrame(tcol, fg_color=BG, corner_radius=8, height=120)
+        self.trade_scroll.pack(fill="both", expand=True, padx=8, pady=6)
 
         self.pvp_result = ctk.CTkLabel(wrap, text="", text_color=MUTED, justify="left", font=("Consolas", 12))
         self.pvp_result.pack(anchor="w", padx=14, pady=(0, 6))
@@ -1078,12 +1219,18 @@ class LulsRNG2(ctk.CTk):
         if not self.online_enabled:
             self.pvp_msg.configure(text="Offline mode: PvP inbox requires cloud login.", text_color=RED)
             return
-        self.pvp_msg.configure(text="Loading PvP data...", text_color=MUTED)
+        self.pvp_msg.configure(text="Loading PvP/social/trade data...", text_color=MUTED)
 
         def job():
-            incoming = self.api.rpc("get_pending_requests", self.username)
-            sent = self.api.rpc("get_sent_requests", self.username)
-            return incoming, sent
+            return {
+                "incoming": self.api.rpc("get_pending_requests", self.username) or [],
+                "sent": self.api.rpc("get_sent_requests", self.username) or [],
+                "friends": self.api.rpc("get_friends", self.username) or [],
+                "friend_in": self.api.rpc("get_incoming_friend_requests", self.username) or [],
+                "friend_out": self.api.rpc("get_outgoing_friend_requests", self.username) or [],
+                "trade_in": self.api.rpc("get_incoming_trades", self.username) or [],
+                "trade_out": self.api.rpc("get_outgoing_trades", self.username) or [],
+            }
 
         self.bus.run(job, self._render_pvp_lists_done)
 
@@ -1092,14 +1239,24 @@ class LulsRNG2(ctk.CTk):
             w.destroy()
         for w in self.pvp_sent.winfo_children():
             w.destroy()
+        if hasattr(self, "friends_scroll"):
+            for w in self.friends_scroll.winfo_children():
+                w.destroy()
+        if hasattr(self, "trade_scroll"):
+            for w in self.trade_scroll.winfo_children():
+                w.destroy()
 
-        if not ok or not isinstance(payload, tuple):
+        if not ok or not isinstance(payload, dict):
             self.pvp_msg.configure(text=f"Cloud issue: {self.api.last_error}", text_color=RED)
             return
 
-        incoming, sent = payload
-        incoming = incoming or []
-        sent = sent or []
+        incoming = payload.get("incoming", [])
+        sent = payload.get("sent", [])
+        friends = payload.get("friends", [])
+        friend_in = payload.get("friend_in", [])
+        friend_out = payload.get("friend_out", [])
+        trade_in = payload.get("trade_in", [])
+        trade_out = payload.get("trade_out", [])
 
         if not incoming:
             ctk.CTkLabel(self.pvp_inbox, text="No pending battle requests.", text_color=MUTED).pack(pady=12)
@@ -1131,7 +1288,59 @@ class LulsRNG2(ctk.CTk):
                 ctk.CTkLabel(row, text=f"{wager:,}c", text_color=AMBER).pack(side="left", padx=6)
                 ctk.CTkLabel(row, text=status.upper(), text_color=col).pack(side="right", padx=10)
 
-        self.pvp_msg.configure(text="PvP inbox updated.", text_color=GREEN)
+        if hasattr(self, "friends_scroll"):
+            if not friends and not friend_in and not friend_out:
+                ctk.CTkLabel(self.friends_scroll, text="No friends/requests yet.", text_color=MUTED).pack(pady=8)
+            for fr in friends[:20]:
+                row = ctk.CTkFrame(self.friends_scroll, fg_color=WHITE, corner_radius=8, border_width=1, border_color=BORDER)
+                row.pack(fill="x", padx=2, pady=2)
+                ctk.CTkLabel(row, text=f"🤝 {fr}", text_color=TEXT).pack(side="left", padx=8, pady=6)
+                ctk.CTkButton(row, text="Battle", width=70, fg_color=RED, hover_color="#dc2626", command=lambda u=fr: self._prefill_battle(u)).pack(side="right", padx=6)
+            for req in friend_in[:10]:
+                rid = int(req.get("id", 0) or 0)
+                sender = str(req.get("sender", "Unknown"))
+                row = ctk.CTkFrame(self.friends_scroll, fg_color=WHITE, corner_radius=8, border_width=1, border_color=BORDER)
+                row.pack(fill="x", padx=2, pady=2)
+                ctk.CTkLabel(row, text=f"📩 {sender} wants to friend", text_color=TEXT).pack(side="left", padx=8, pady=6)
+                ctk.CTkButton(row, text="Accept", width=70, fg_color=ACCENT, hover_color=ACCENT2, command=lambda i=rid: self._accept_friend_request(i)).pack(side="right", padx=4)
+                ctk.CTkButton(row, text="Decline", width=70, fg_color=RED, hover_color="#dc2626", command=lambda i=rid: self._decline_friend_request(i)).pack(side="right", padx=4)
+            for req in friend_out[:10]:
+                receiver = str(req.get("receiver", "Unknown"))
+                row = ctk.CTkFrame(self.friends_scroll, fg_color=WHITE, corner_radius=8, border_width=1, border_color=BORDER)
+                row.pack(fill="x", padx=2, pady=2)
+                ctk.CTkLabel(row, text=f"🕓 Pending to {receiver}", text_color=MUTED).pack(side="left", padx=8, pady=6)
+
+        if hasattr(self, "trade_scroll"):
+            if not trade_in and not trade_out:
+                ctk.CTkLabel(self.trade_scroll, text="No trades yet.", text_color=MUTED).pack(pady=8)
+            for tr in trade_in[:10]:
+                tid = int(tr.get("id", 0) or 0)
+                sender = str(tr.get("sender", "Unknown"))
+                offer_t = str(tr.get("offered_title", ""))
+                offer_c = int(tr.get("offered_count", 1) or 1)
+                want_t = str(tr.get("requested_title", ""))
+                want_c = int(tr.get("requested_count", 1) or 1)
+                row = ctk.CTkFrame(self.trade_scroll, fg_color=WHITE, corner_radius=8, border_width=1, border_color=BORDER)
+                row.pack(fill="x", padx=2, pady=2)
+                ctk.CTkLabel(row, text=f"⬇ {sender}: {offer_c}x {offer_t} ↔ {want_c}x {want_t}", text_color=TEXT).pack(anchor="w", padx=8, pady=(6, 2))
+                b = ctk.CTkFrame(row, fg_color="transparent")
+                b.pack(anchor="w", padx=6, pady=(0, 6))
+                ctk.CTkButton(b, text="Accept", width=70, fg_color=ACCENT, hover_color=ACCENT2, command=lambda t=tr: self._accept_trade(t)).pack(side="left", padx=4)
+                ctk.CTkButton(b, text="Decline", width=70, fg_color=RED, hover_color="#dc2626", command=lambda i=tid: self._decline_trade(i)).pack(side="left", padx=4)
+            for tr in trade_out[:10]:
+                receiver = str(tr.get("receiver", "Unknown"))
+                status = str(tr.get("status", "pending")).upper()
+                offer_t = str(tr.get("offered_title", ""))
+                offer_c = int(tr.get("offered_count", 1) or 1)
+                want_t = str(tr.get("requested_title", ""))
+                want_c = int(tr.get("requested_count", 1) or 1)
+                col = GREEN if status == "RESOLVED" else (RED if status == "DECLINED" else MUTED)
+                row = ctk.CTkFrame(self.trade_scroll, fg_color=WHITE, corner_radius=8, border_width=1, border_color=BORDER)
+                row.pack(fill="x", padx=2, pady=2)
+                ctk.CTkLabel(row, text=f"⬆ To {receiver}: {offer_c}x {offer_t} ↔ {want_c}x {want_t}", text_color=TEXT).pack(side="left", padx=8, pady=6)
+                ctk.CTkLabel(row, text=status, text_color=col).pack(side="right", padx=8)
+
+        self.pvp_msg.configure(text="PvP/social/trade updated.", text_color=GREEN)
 
     def _send_battle(self):
         now = time.time()
@@ -1187,6 +1396,127 @@ class LulsRNG2(ctk.CTk):
         self.pvp_msg.configure(text=str(msg), text_color=GREEN if ok else RED)
         if ok:
             self._refresh_pvp()
+
+    def _send_friend_request(self):
+        if not self.online_enabled:
+            self.pvp_msg.configure(text="Offline mode: cannot send friend request.", text_color=RED)
+            return
+        target = self.friend_target.get().strip()
+        if not target:
+            self.pvp_msg.configure(text="Enter a friend username.", text_color=RED)
+            return
+        if target == self.username:
+            self.pvp_msg.configure(text="You cannot friend yourself.", text_color=RED)
+            return
+        self.bus.run(
+            lambda: self.api.rpc("send_friend_request", self.username, target),
+            lambda ok, res: self._after_simple_pvp_action(res),
+        )
+
+    def _accept_friend_request(self, req_id: int):
+        self.bus.run(lambda: self.api.rpc("accept_friend_request", req_id), lambda ok, res: self._refresh_pvp())
+
+    def _decline_friend_request(self, req_id: int):
+        self.bus.run(lambda: self.api.rpc("decline_friend_request", req_id), lambda ok, res: self._refresh_pvp())
+
+    def _send_trade_request(self):
+        if not self.online_enabled:
+            self.pvp_msg.configure(text="Offline mode: cannot send trade.", text_color=RED)
+            return
+        target = self.trade_target.get().strip()
+        offer_t = self.trade_offer_title.get().strip()
+        want_t = self.trade_want_title.get().strip()
+        if not target or not offer_t or not want_t:
+            self.pvp_msg.configure(text="Trade needs target, offer title, and want title.", text_color=RED)
+            return
+        try:
+            offer_c = max(1, int((self.trade_offer_count.get() or "1").strip()))
+            want_c = max(1, int((self.trade_want_count.get() or "1").strip()))
+        except Exception:
+            self.pvp_msg.configure(text="Trade counts must be whole numbers.", text_color=RED)
+            return
+        if self.engine.s.inventory.get(offer_t, 0) < offer_c:
+            self.pvp_msg.configure(text=f"You only have {self.engine.s.inventory.get(offer_t, 0)}x {offer_t}.", text_color=RED)
+            return
+        self.bus.run(
+            lambda: self.api.rpc("send_trade_request", self.username, target, offer_t, offer_c, want_t, want_c),
+            lambda ok, res: self._after_simple_pvp_action(res),
+        )
+
+    def _accept_trade(self, trade: dict):
+        if not self.online_enabled:
+            return
+        tid = int(trade.get("id", 0) or 0)
+        sender = str(trade.get("sender", ""))
+        offer_t = str(trade.get("offered_title", ""))
+        want_t = str(trade.get("requested_title", ""))
+        offer_c = int(trade.get("offered_count", 1) or 1)
+        want_c = int(trade.get("requested_count", 1) or 1)
+        if self.engine.s.inventory.get(want_t, 0) < want_c:
+            self.pvp_msg.configure(text=f"Need {want_c}x {want_t} to accept.", text_color=RED)
+            return
+
+        def do_trade():
+            prof = self.api.rpc("get_player_profile", sender)
+            if not prof:
+                return False, f"Sender profile load failed: {self.api.last_error}"
+            sender_state = State.from_dict(prof.get("data", {}) or {})
+            if sender_state.inventory.get(offer_t, 0) < offer_c:
+                return False, "Sender no longer has enough offered titles."
+
+            my_inv = self.engine.s.inventory
+            s_inv = sender_state.inventory
+            my_inv[want_t] = max(0, my_inv.get(want_t, 0) - want_c)
+            if my_inv[want_t] <= 0:
+                my_inv.pop(want_t, None)
+            my_inv[offer_t] = my_inv.get(offer_t, 0) + offer_c
+
+            s_inv[offer_t] = max(0, s_inv.get(offer_t, 0) - offer_c)
+            if s_inv[offer_t] <= 0:
+                s_inv.pop(offer_t, None)
+            s_inv[want_t] = s_inv.get(want_t, 0) + want_c
+
+            if offer_t not in self.engine.s.collection:
+                self.engine.s.collection.append(offer_t)
+            if want_t not in sender_state.collection:
+                sender_state.collection.append(want_t)
+
+            self.engine.save_local()
+            ok_self = bool(self.api.rpc("save_player", self.username, self.engine.s.to_dict()))
+            ok_sender = bool(self.api.rpc("save_player", sender, sender_state.to_dict()))
+            ok_resolve = bool(self.api.rpc("resolve_trade", tid))
+            if not (ok_self and ok_sender and ok_resolve):
+                return False, f"Trade sync failed: {self.api.last_error}"
+            return True, "Trade accepted."
+
+        self.bus.run(do_trade, self._after_trade_done)
+
+    def _after_trade_done(self, ok: bool, res):
+        if not ok:
+            self.pvp_msg.configure(text=f"Trade failed: {res}", text_color=RED)
+            return
+        ok2, msg = res
+        self.pvp_msg.configure(text=str(msg), text_color=GREEN if ok2 else RED)
+        self._refresh_all()
+        self._refresh_pvp()
+        if ok2 and self.online_enabled:
+            self._sync_state()
+
+    def _decline_trade(self, trade_id: int):
+        self.bus.run(lambda: self.api.rpc("decline_trade", trade_id), lambda ok, res: self._refresh_pvp())
+
+    def _after_simple_pvp_action(self, res):
+        if not res:
+            self.pvp_msg.configure(text=f"Cloud issue: {self.api.last_error}", text_color=RED)
+            return
+        if isinstance(res, (list, tuple)) and len(res) >= 2:
+            ok, msg = res[0], res[1]
+            self.pvp_msg.configure(text=str(msg), text_color=GREEN if ok else RED)
+        elif isinstance(res, bool):
+            self.pvp_msg.configure(text="Action complete." if res else "Action failed.", text_color=GREEN if res else RED)
+        else:
+            self.pvp_msg.configure(text=str(res), text_color=GREEN)
+        self._refresh_pvp()
 
     def _accept_battle(self, req_id: int, challenger: str, wager_coins: int):
         now = time.time()
@@ -1301,7 +1631,7 @@ class LulsRNG2(ctk.CTk):
             return
         if self.online_enabled and self.username:
             self._sync_state()
-        self.after(8000, self._heartbeat_tick)
+        self.after(HEARTBEAT_MS, self._heartbeat_tick)
 
     # -------------------------- periodic / refresh --------------------------
     def _set_cloud_label(self):
@@ -1326,7 +1656,26 @@ class LulsRNG2(ctk.CTk):
         except Exception as e:
             log_exc("slow_tick", e)
         if not self._closing and self.winfo_exists():
-            self.after(1000, self._slow_tick)
+            self.after(SLOW_TICK_MS, self._slow_tick)
+
+    def _live_refresh_tick(self):
+        if self._closing or not self.winfo_exists():
+            return
+        try:
+            if self.online_enabled:
+                tab = self.tabs.get()
+                if tab == "⚔ PvP":
+                    self._refresh_pvp()
+                elif tab == "🌍 Online":
+                    self._refresh_online()
+                elif tab == "🏆 Leaderboard":
+                    self._refresh_leaderboard()
+                elif tab == "🎲 Roll":
+                    self._refresh_recent_rolls()
+        except Exception as e:
+            log_exc("live_refresh_tick", e)
+        if not self._closing and self.winfo_exists():
+            self.after(LIVE_REFRESH_MS, self._live_refresh_tick)
 
     def _tab_changed(self):
         tab = self.tabs.get()
@@ -1336,6 +1685,8 @@ class LulsRNG2(ctk.CTk):
             self._refresh_leaderboard()
         elif tab == "⚔ PvP":
             self._refresh_pvp()
+        elif tab == "✨ Rarities":
+            self._render_rarities()
         elif tab == "🎲 Roll":
             self._refresh_recent_rolls()
 
@@ -1361,6 +1712,8 @@ class LulsRNG2(ctk.CTk):
                 f"• PvP {s.pvp_wins}/{s.pvp_losses}"
             )
         )
+        if hasattr(self, "rarity_rows"):
+            self._render_rarities()
         self.rb_cost.configure(text=f"Cost: {self.engine.rebirth_cost():,} coins  •  Need Lv 25 + Legendary+")
         self.lbl_bt.configure(text=f"Battle titles: {'  •  '.join(s.battle_titles) if s.battle_titles else 'none'}")
 
