@@ -1645,38 +1645,16 @@ class LulsRNG2(ctk.CTk):
             return
 
         def do_work():
-            profile = self.api.rpc("get_player_profile", challenger)
-            if not profile:
-                return False, f"Could not load challenger profile: {self.api.last_error}"
-
-            opp_state = State.from_dict(profile.get("data", {}) or {})
-            opp_titles = Engine(opp_state).get_battle_titles_for_pvp()
-            if not opp_titles:
-                return False, "Challenger has no usable battle titles."
-            if wager_coins > opp_state.coins:
-                return False, "Challenger can no longer cover wager."
-
-            result = pvp_simulate(my_titles, opp_titles)
-            won = result.get("winner") == "me"
-
-            if won:
-                self.engine.s.pvp_wins += 1
-                self.engine.s.coins += wager_coins
-                opp_state.pvp_losses += 1
-                opp_state.coins = max(0, opp_state.coins - wager_coins)
-            else:
-                self.engine.s.pvp_losses += 1
-                self.engine.s.coins = max(0, self.engine.s.coins - wager_coins)
-                opp_state.pvp_wins += 1
-                opp_state.coins += wager_coins
-
+            res = self.api.rpc("accept_battle", req_id, self.username)
+            if not res:
+                return False, f"Battle resolve failed: {self.api.last_error}"
+            ok2, payload = res
+            if not ok2:
+                return False, str(payload)
+            defender_state = payload.get("defender_state", {})
+            self.engine.s = State.from_dict(defender_state)
             self.engine.save_local()
-            ok_self = self._save_cloud_state(self.username, self.engine.s.to_dict())
-            ok_opp = self._save_cloud_state(challenger, opp_state.to_dict())
-            ok_resolve = bool(self.api.rpc("resolve_battle", req_id, result, self.username if won else challenger))
-            if not (ok_self and ok_opp and ok_resolve):
-                return False, f"Cloud save/resolve failed: {self.api.last_error}"
-            return True, (won, result)
+            return True, (bool(payload.get("won", False)), payload.get("result", {}))
 
         self._battle_action_busy = True
         self.bus.run(do_work, self._accept_battle_done)
@@ -1697,20 +1675,14 @@ class LulsRNG2(ctk.CTk):
         score_txt = f"{result.get('my_score', 0)} - {result.get('opp_score', 0)}"
         lines = [f"{outcome} ({score_txt})"]
         for i, rnd in enumerate(result.get("rounds", []), start=1):
-            mark = "W" if rnd.get("winner") == "me" else "L"
-            lines.append(f"R{i} {mark}: {rnd.get('my_title')} [{rnd.get('my_power')}] vs {rnd.get('opp_title')} [{rnd.get('opp_power')}]")
+            mark = "W" if rnd.get("winner") == "defender" else "L"
+            lines.append(
+                f"R{i} {mark}: {rnd.get('def_title')} [{rnd.get('def_power')}] "
+                f"vs {rnd.get('chal_title')} [{rnd.get('chal_power')}]"
+            )
         self.pvp_result.configure(text="\n".join(lines), text_color=GREEN if won else RED)
 
-        if won:
-            self.engine.s.pvp_streak += 1
-            streak_bonus = min(120, self.engine.s.pvp_streak * 10)
-            self.engine.s.coins += streak_bonus
-            self.engine.s.total_wins += 1
-            self.pvp_msg.configure(text=f"Battle resolved and synced. Win streak {self.engine.s.pvp_streak} (+{streak_bonus}c).", text_color=GREEN)
-        else:
-            self.engine.s.pvp_streak = 0
-            self.engine.s.total_losses += 1
-            self.pvp_msg.configure(text="Battle resolved and synced. Streak reset.", text_color=GREEN)
+        self.pvp_msg.configure(text="Battle resolved on cloud and synced.", text_color=GREEN)
         self.engine.save_local()
         self._refresh_all()
         self._refresh_pvp()

@@ -10,6 +10,7 @@ import os
 import threading
 import time
 import hashlib
+import random
 from dataclasses import dataclass, field, asdict
 from datetime import date, datetime
 from typing import Optional
@@ -24,9 +25,46 @@ from fastapi.responses import JSONResponse
 DB_URL = os.getenv("LULSRNG_DB_URL", "").strip()
 API_TOKEN = os.getenv("LULSRNG_API_TOKEN", "").strip()
 
+RARITY_ORDER = ["Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic"]
+RARITY_POWER = {"Common": 1, "Uncommon": 3, "Rare": 8, "Epic": 20, "Legendary": 55, "Mythic": 140}
+TITLES = {
+    "Common": ["Gatekeeper", "Dust Walker", "Stone Foot", "Plain Blade", "Drift Soul", "Mild Hero"],
+    "Uncommon": ["Bog Walker", "Night Stalker", "Cursed Coin", "Green Fang", "Echo Scout", "Iron Skin"],
+    "Rare": ["Void Seeker", "Frost Herald", "Thunder Step", "Stormcaller", "Ash Hunter", "Moon Razor"],
+    "Epic": ["Soulreaper", "Aether Weave", "Ruinbringer", "Chaos Bloom", "Phantom King", "Flux Guard"],
+    "Legendary": ["Dragon Sovereign", "Eternal Flame", "Starshatter", "The Undying", "Doomforged", "Skybreaker"],
+    "Mythic": ["Abyssal God", "Null Sovereign", "Heavenbreaker", "Cosmos Ender", "Singularity", "First Light"],
+}
+
 
 def hash_password(pw: str) -> str:
     return hashlib.sha256(pw.encode()).hexdigest()
+
+
+def title_rarity(title: str) -> str:
+    for r, arr in TITLES.items():
+        if title in arr:
+            return r
+    return "Common"
+
+
+def title_power(title: str) -> int:
+    r = title_rarity(title)
+    base = RARITY_POWER.get(r, 1)
+    return int(base * random.uniform(0.86, 1.14))
+
+
+def get_best_titles_for_pvp(state: "PlayerState", n: int = 3):
+    inv = state.inventory or {}
+    owned = [(str(t), int(c)) for t, c in inv.items() if int(c) > 0]
+    if not owned:
+        return []
+    # Prefer explicit battle titles if still owned.
+    bt = [str(t) for t in (state.battle_titles or []) if inv.get(str(t), 0) > 0]
+    if bt:
+        return bt[:n]
+    owned.sort(key=lambda tc: (RARITY_ORDER.index(title_rarity(tc[0])), tc[1]), reverse=True)
+    return [t for t, _ in owned[:n]]
 
 
 @dataclass
@@ -66,6 +104,10 @@ class PlayerState:
     title_trades_completed: int = 0
     void_essence: int = 0
     total_rift_wins: int = 0
+    daily_claim_date: str = ""
+    daily_streak: int = 0
+    roll_chests_claimed: int = 0
+    pvp_streak: int = 0
 
     def to_dict(self):
         return asdict(self)
@@ -429,15 +471,137 @@ class Database:
         return rows or []
 
     def decline_request(self, request_id: int):
-        self._exec("UPDATE battle_requests SET status='declined' WHERE id=%s", (request_id,))
-        return True
+        ok = self._exec("UPDATE battle_requests SET status='declined' WHERE id=%s AND status='pending'", (request_id,))
+        return bool(ok)
 
     def resolve_battle(self, request_id: int, result: dict, winner: str):
-        self._exec(
-            "UPDATE battle_requests SET status='resolved', result=%s WHERE id=%s",
+        ok = self._exec(
+            "UPDATE battle_requests SET status='resolved', result=%s WHERE id=%s AND status='pending'",
             (json.dumps(result), request_id)
         )
-        return True
+        return bool(ok)
+
+    def accept_battle(self, request_id: int, defender: str):
+        if not self.conn and not self.reconnect_if_needed(force=True):
+            return False, "DB unavailable"
+        if not self.conn:
+            return False, "DB unavailable"
+        with self.lock:
+            try:
+                cur = self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                cur.execute(
+                    "SELECT id, challenger, defender, wager_coins, wager_shards, status "
+                    "FROM battle_requests WHERE id=%s FOR UPDATE",
+                    (request_id,),
+                )
+                req = cur.fetchone()
+                if not req:
+                    self.conn.rollback()
+                    return False, "Battle request not found."
+                if req["status"] != "pending":
+                    self.conn.rollback()
+                    return False, "Battle request is no longer pending."
+                if req["defender"] != defender:
+                    self.conn.rollback()
+                    return False, "Only the defender can accept this battle."
+
+                challenger = req["challenger"]
+                wager_coins = max(0, int(req.get("wager_coins", 0) or 0))
+                wager_shards = max(0, int(req.get("wager_shards", 0) or 0))
+
+                cur.execute("SELECT data FROM players WHERE username=%s FOR UPDATE", (challenger,))
+                c_row = cur.fetchone()
+                cur.execute("SELECT data FROM players WHERE username=%s FOR UPDATE", (defender,))
+                d_row = cur.fetchone()
+                if not c_row or not d_row:
+                    self.conn.rollback()
+                    return False, "Missing challenger/defender profile."
+
+                cstate = PlayerState.from_dict(c_row["data"] or {})
+                dstate = PlayerState.from_dict(d_row["data"] or {})
+                c_titles = get_best_titles_for_pvp(cstate, 3)
+                d_titles = get_best_titles_for_pvp(dstate, 3)
+                if not c_titles or not d_titles:
+                    self.conn.rollback()
+                    return False, "One player has no valid battle titles."
+                if dstate.coins < wager_coins or dstate.shards < wager_shards:
+                    self.conn.rollback()
+                    return False, "Defender cannot cover wager."
+                if cstate.coins < wager_coins or cstate.shards < wager_shards:
+                    self.conn.rollback()
+                    return False, "Challenger cannot cover wager."
+
+                rounds = []
+                d_score = 0
+                c_score = 0
+                for i in range(min(3, max(len(d_titles), len(c_titles)))):
+                    dt = d_titles[i] if i < len(d_titles) else random.choice(d_titles)
+                    ct = c_titles[i] if i < len(c_titles) else random.choice(c_titles)
+                    dp = title_power(dt) + random.randint(0, 18)
+                    cp = title_power(ct) + random.randint(0, 18)
+                    winner = "defender" if dp >= cp else "challenger"
+                    if winner == "defender":
+                        d_score += 1
+                    else:
+                        c_score += 1
+                    rounds.append({
+                        "def_title": dt, "def_power": dp, "def_rarity": title_rarity(dt),
+                        "chal_title": ct, "chal_power": cp, "chal_rarity": title_rarity(ct),
+                        "winner": winner,
+                    })
+
+                if d_score == c_score:
+                    d_sum = sum(r["def_power"] for r in rounds)
+                    c_sum = sum(r["chal_power"] for r in rounds)
+                    defender_won = d_sum >= c_sum
+                else:
+                    defender_won = d_score > c_score
+
+                if defender_won:
+                    dstate.pvp_wins += 1
+                    cstate.pvp_losses += 1
+                    dstate.pvp_streak = max(0, int(getattr(dstate, "pvp_streak", 0))) + 1
+                    cstate.pvp_streak = 0
+                    dstate.coins += wager_coins
+                    dstate.shards += wager_shards
+                    cstate.coins = max(0, cstate.coins - wager_coins)
+                    cstate.shards = max(0, cstate.shards - wager_shards)
+                else:
+                    dstate.pvp_losses += 1
+                    cstate.pvp_wins += 1
+                    cstate.pvp_streak = max(0, int(getattr(cstate, "pvp_streak", 0))) + 1
+                    dstate.pvp_streak = 0
+                    dstate.coins = max(0, dstate.coins - wager_coins)
+                    dstate.shards = max(0, dstate.shards - wager_shards)
+                    cstate.coins += wager_coins
+                    cstate.shards += wager_shards
+
+                result = {
+                    "defender": defender,
+                    "challenger": challenger,
+                    "def_score": d_score,
+                    "chal_score": c_score,
+                    "rounds": rounds,
+                    "winner": defender if defender_won else challenger,
+                    "wager_coins": wager_coins,
+                    "wager_shards": wager_shards,
+                }
+
+                cur.execute("UPDATE players SET data=%s, last_seen=NOW() WHERE username=%s", (json.dumps(cstate.to_dict()), challenger))
+                cur.execute("UPDATE players SET data=%s, last_seen=NOW() WHERE username=%s", (json.dumps(dstate.to_dict()), defender))
+                cur.execute(
+                    "UPDATE battle_requests SET status='resolved', result=%s WHERE id=%s AND status='pending'",
+                    (json.dumps(result), request_id),
+                )
+                self.conn.commit()
+                return True, {"won": defender_won, "result": result, "defender_state": dstate.to_dict()}
+            except Exception as e:
+                self.last_error = str(e)
+                try:
+                    self.conn.rollback()
+                except Exception:
+                    pass
+                return False, str(e)
 
     def get_active_boss_race(self):
         row = self._exec(
@@ -595,7 +759,7 @@ ALLOWED_METHODS = {
     "post_roll", "get_recent_rolls",
     "get_online_players",
     "get_player_profile",
-    "send_battle_request", "get_pending_requests", "get_sent_requests", "decline_request", "resolve_battle",
+    "send_battle_request", "get_pending_requests", "get_sent_requests", "decline_request", "resolve_battle", "accept_battle",
     "get_active_boss_race", "claim_boss_race",
     "send_trade_request", "get_incoming_trades", "get_outgoing_trades", "decline_trade", "resolve_trade",
     "are_friends", "send_friend_request", "get_incoming_friend_requests", "get_outgoing_friend_requests",
