@@ -27,6 +27,8 @@ API_TOKEN = os.getenv("LULSRNG_API_TOKEN", "").strip()
 
 RARITY_ORDER = ["Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Divine"]
 RARITY_POWER = {"Common": 1, "Uncommon": 3, "Rare": 8, "Epic": 20, "Legendary": 55, "Mythic": 140, "Divine": 320}
+RARITY_CRIT_CHANCE = {"Common": 0.03, "Uncommon": 0.04, "Rare": 0.06, "Epic": 0.08, "Legendary": 0.11, "Mythic": 0.14, "Divine": 0.18}
+RARITY_GUARD_CHANCE = {"Common": 0.10, "Uncommon": 0.11, "Rare": 0.12, "Epic": 0.13, "Legendary": 0.14, "Mythic": 0.15, "Divine": 0.16}
 TITLES = {
     "Common": ["Gatekeeper", "Dust Walker", "Stone Foot", "Plain Blade", "Drift Soul", "Mild Hero"],
     "Uncommon": ["Bog Walker", "Night Stalker", "Cursed Coin", "Green Fang", "Echo Scout", "Iron Skin"],
@@ -53,6 +55,27 @@ def title_power(title: str) -> int:
     r = title_rarity(title)
     base = RARITY_POWER.get(r, 1)
     return int(base * random.uniform(0.86, 1.14))
+
+
+def lineup_profile(titles: list):
+    rarities = [title_rarity(t) for t in (titles or [])]
+    if not rarities:
+        return {"base_bonus": 0, "crit_bonus": 0.0, "guard_bonus": 0.0, "team_power": 0}
+    uniq = len(set(rarities))
+    high = sum(1 for r in rarities if r in ("Legendary", "Mythic", "Divine"))
+    common = sum(1 for r in rarities if r in ("Common", "Uncommon"))
+    style_base = max(0, (uniq - 1) * 2) + min(4, high * 2)
+    if uniq == 1:
+        style_base = max(0, style_base - 3)
+    crit_bonus = min(0.08, 0.01 * uniq + 0.01 * high)
+    guard_bonus = min(0.07, 0.015 * common + (0.015 if uniq >= 3 else 0.0))
+    team_power = sum(RARITY_POWER.get(r, 1) for r in rarities)
+    return {
+        "base_bonus": style_base,
+        "crit_bonus": crit_bonus,
+        "guard_bonus": guard_bonus,
+        "team_power": team_power,
+    }
 
 
 def get_best_titles_for_pvp(state: "PlayerState", n: int = 3):
@@ -536,23 +559,68 @@ class Database:
                     self.conn.rollback()
                     return False, "Challenger cannot cover wager."
 
+                d_prof = lineup_profile(d_titles)
+                c_prof = lineup_profile(c_titles)
                 rounds = []
                 d_score = 0
                 c_score = 0
                 for i in range(min(3, max(len(d_titles), len(c_titles)))):
                     dt = d_titles[i] if i < len(d_titles) else random.choice(d_titles)
                     ct = c_titles[i] if i < len(c_titles) else random.choice(c_titles)
-                    dp = title_power(dt) + random.randint(0, 18)
-                    cp = title_power(ct) + random.randint(0, 18)
-                    winner = "defender" if dp >= cp else "challenger"
+                    dr = title_rarity(dt)
+                    cr = title_rarity(ct)
+                    d_clutch = max(0, c_score - d_score) * 3
+                    c_clutch = max(0, d_score - c_score) * 3
+
+                    dp = title_power(dt) + random.randint(0, 14) + int(d_prof["base_bonus"]) + d_clutch
+                    cp = title_power(ct) + random.randint(0, 14) + int(c_prof["base_bonus"]) + c_clutch
+
+                    d_crit = random.random() < min(0.42, RARITY_CRIT_CHANCE.get(dr, 0.03) + float(d_prof["crit_bonus"]))
+                    c_crit = random.random() < min(0.42, RARITY_CRIT_CHANCE.get(cr, 0.03) + float(c_prof["crit_bonus"]))
+                    if d_crit:
+                        dp += random.randint(8, 20)
+                    if c_crit:
+                        cp += random.randint(8, 20)
+
+                    d_guard = random.random() < min(0.38, RARITY_GUARD_CHANCE.get(dr, 0.10) + float(d_prof["guard_bonus"]))
+                    c_guard = random.random() < min(0.38, RARITY_GUARD_CHANCE.get(cr, 0.10) + float(c_prof["guard_bonus"]))
+                    if d_guard:
+                        cp = max(1, cp - random.randint(4, 12))
+                    if c_guard:
+                        dp = max(1, dp - random.randint(4, 12))
+
+                    if dp == cp:
+                        winner = "defender" if random.random() < 0.52 else "challenger"
+                    else:
+                        winner = "defender" if dp > cp else "challenger"
                     if winner == "defender":
                         d_score += 1
                     else:
                         c_score += 1
+                    tags = []
+                    if d_clutch:
+                        tags.append(f"DEF CLUTCH+{d_clutch}")
+                    if c_clutch:
+                        tags.append(f"CHAL CLUTCH+{c_clutch}")
+                    if d_crit:
+                        tags.append("DEF CRIT")
+                    if c_crit:
+                        tags.append("CHAL CRIT")
+                    if d_guard:
+                        tags.append("DEF GUARD")
+                    if c_guard:
+                        tags.append("CHAL GUARD")
                     rounds.append({
-                        "def_title": dt, "def_power": dp, "def_rarity": title_rarity(dt),
-                        "chal_title": ct, "chal_power": cp, "chal_rarity": title_rarity(ct),
+                        "def_title": dt, "def_power": dp, "def_rarity": dr,
+                        "chal_title": ct, "chal_power": cp, "chal_rarity": cr,
                         "winner": winner,
+                        "def_crit": d_crit,
+                        "chal_crit": c_crit,
+                        "def_guard": d_guard,
+                        "chal_guard": c_guard,
+                        "def_clutch": d_clutch,
+                        "chal_clutch": c_clutch,
+                        "tags": tags,
                     })
 
                 if d_score == c_score:
@@ -581,6 +649,14 @@ class Database:
                     cstate.coins += wager_coins
                     cstate.shards += wager_shards
 
+                upset_bonus = 0
+                if defender_won and int(d_prof["team_power"]) + 20 < int(c_prof["team_power"]):
+                    upset_bonus = 25
+                    dstate.coins += upset_bonus
+                elif (not defender_won) and int(c_prof["team_power"]) + 20 < int(d_prof["team_power"]):
+                    upset_bonus = 25
+                    cstate.coins += upset_bonus
+
                 result = {
                     "defender": defender,
                     "challenger": challenger,
@@ -590,6 +666,9 @@ class Database:
                     "winner": defender if defender_won else challenger,
                     "wager_coins": wager_coins,
                     "wager_shards": wager_shards,
+                    "upset_bonus": upset_bonus,
+                    "def_style_bonus": int(d_prof["base_bonus"]),
+                    "chal_style_bonus": int(c_prof["base_bonus"]),
                 }
 
                 cur.execute("UPDATE players SET data=%s, last_seen=NOW() WHERE username=%s", (json.dumps(cstate.to_dict()), challenger))

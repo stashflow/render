@@ -72,7 +72,7 @@ PITY_SOFT = 25
 PITY_HARD = 35
 LUCKY_SPAN = 10
 LUCKY_BUY_COST = 300
-BATTLE_SEND_COOLDOWN_SEC = 6
+BATTLE_SEND_COOLDOWN_SEC = 5
 BATTLE_ACTION_COOLDOWN_SEC = 2
 MAX_WAGER_FACTOR = 0.25
 ROLL_CHEST_INTERVAL = 25
@@ -149,6 +149,8 @@ RARITY_POWER = {
     "Mythic": 140,
     "Divine": 320,
 }
+RARITY_CRIT_CHANCE = {"Common": 0.03, "Uncommon": 0.04, "Rare": 0.06, "Epic": 0.08, "Legendary": 0.11, "Mythic": 0.14, "Divine": 0.18}
+RARITY_GUARD_CHANCE = {"Common": 0.10, "Uncommon": 0.11, "Rare": 0.12, "Epic": 0.13, "Legendary": 0.14, "Mythic": 0.15, "Divine": 0.16}
 RARITY_COINS = {
     "Common": 1,
     "Uncommon": 2,
@@ -475,7 +477,24 @@ def title_power(title: str) -> int:
     return int(base * random.uniform(0.86, 1.14))
 
 
+def lineup_profile(titles: List[str]) -> dict:
+    rarities = [title_rarity(t) for t in (titles or [])]
+    if not rarities:
+        return {"base_bonus": 0, "crit_bonus": 0.0, "guard_bonus": 0.0}
+    uniq = len(set(rarities))
+    high = sum(1 for r in rarities if r in ("Legendary", "Mythic", "Divine"))
+    common = sum(1 for r in rarities if r in ("Common", "Uncommon"))
+    base_bonus = max(0, (uniq - 1) * 2) + min(4, high * 2)
+    if uniq == 1:
+        base_bonus = max(0, base_bonus - 3)
+    crit_bonus = min(0.08, 0.01 * uniq + 0.01 * high)
+    guard_bonus = min(0.07, 0.015 * common + (0.015 if uniq >= 3 else 0.0))
+    return {"base_bonus": base_bonus, "crit_bonus": crit_bonus, "guard_bonus": guard_bonus}
+
+
 def pvp_simulate(my_titles: List[str], opp_titles: List[str]) -> dict:
+    my_prof = lineup_profile(my_titles)
+    opp_prof = lineup_profile(opp_titles)
     rounds = []
     my_score = 0
     opp_score = 0
@@ -483,21 +502,51 @@ def pvp_simulate(my_titles: List[str], opp_titles: List[str]) -> dict:
     for i in range(duel_len):
         mt = my_titles[i] if i < len(my_titles) else random.choice(my_titles)
         ot = opp_titles[i] if i < len(opp_titles) else random.choice(opp_titles)
-        mp = title_power(mt) + random.randint(0, 18)
-        op = title_power(ot) + random.randint(0, 18)
+        mr = title_rarity(mt)
+        orr = title_rarity(ot)
+        my_clutch = max(0, opp_score - my_score) * 3
+        opp_clutch = max(0, my_score - opp_score) * 3
+        mp = title_power(mt) + random.randint(0, 14) + int(my_prof["base_bonus"]) + my_clutch
+        op = title_power(ot) + random.randint(0, 14) + int(opp_prof["base_bonus"]) + opp_clutch
+        my_crit = random.random() < min(0.42, RARITY_CRIT_CHANCE.get(mr, 0.03) + float(my_prof["crit_bonus"]))
+        opp_crit = random.random() < min(0.42, RARITY_CRIT_CHANCE.get(orr, 0.03) + float(opp_prof["crit_bonus"]))
+        if my_crit:
+            mp += random.randint(8, 20)
+        if opp_crit:
+            op += random.randint(8, 20)
+        my_guard = random.random() < min(0.38, RARITY_GUARD_CHANCE.get(mr, 0.10) + float(my_prof["guard_bonus"]))
+        opp_guard = random.random() < min(0.38, RARITY_GUARD_CHANCE.get(orr, 0.10) + float(opp_prof["guard_bonus"]))
+        if my_guard:
+            op = max(1, op - random.randint(4, 12))
+        if opp_guard:
+            mp = max(1, mp - random.randint(4, 12))
         winner = "me" if mp >= op else "opp"
         if winner == "me":
             my_score += 1
         else:
             opp_score += 1
+        tags = []
+        if my_crit:
+            tags.append("YOU CRIT")
+        if opp_crit:
+            tags.append("OPP CRIT")
+        if my_guard:
+            tags.append("YOU GUARD")
+        if opp_guard:
+            tags.append("OPP GUARD")
+        if my_clutch:
+            tags.append(f"YOU CLUTCH+{my_clutch}")
+        if opp_clutch:
+            tags.append(f"OPP CLUTCH+{opp_clutch}")
         rounds.append({
             "my_title": mt,
-            "my_rarity": title_rarity(mt),
+            "my_rarity": mr,
             "my_power": mp,
             "opp_title": ot,
-            "opp_rarity": title_rarity(ot),
+            "opp_rarity": orr,
             "opp_power": op,
             "winner": winner,
+            "tags": tags,
         })
     if my_score == opp_score:
         winner = "me" if sum(r["my_power"] for r in rounds) >= sum(r["opp_power"] for r in rounds) else "opp"
@@ -988,6 +1037,7 @@ class LulsRNG2(ctk.CTk):
         self.btn_send_battle.pack(side="left", padx=6)
         ctk.CTkButton(row, text="Refresh", fg_color=PINK, hover_color="#db2777", command=self._refresh_pvp).pack(side="left", padx=6)
         ctk.CTkButton(row, text="Set Best 3", fg_color=RED, hover_color="#dc2626", command=self._set_best_three).pack(side="left", padx=6)
+        ctk.CTkLabel(wrap, text="Combat engine: style bonuses, clutch momentum, crits, and guards.", text_color=MUTED).pack(anchor="w", padx=14, pady=(0, 2))
 
         pane = ctk.CTkFrame(wrap, fg_color="transparent")
         pane.pack(fill="both", expand=True, padx=12, pady=(4, 8))
@@ -1042,11 +1092,50 @@ class LulsRNG2(ctk.CTk):
         self.trade_scroll = ctk.CTkScrollableFrame(tcol, fg_color=BG, corner_radius=8, height=120)
         self.trade_scroll.pack(fill="both", expand=True, padx=8, pady=6)
 
-        self.pvp_result = ctk.CTkLabel(wrap, text="", text_color=MUTED, justify="left", font=("Consolas", 12))
-        self.pvp_result.pack(anchor="w", padx=14, pady=(0, 6))
+        result_card = ctk.CTkFrame(wrap, fg_color="#0f172a", corner_radius=10, border_width=1, border_color="#1e293b")
+        result_card.pack(fill="x", padx=12, pady=(0, 8))
+        self.pvp_summary = ctk.CTkLabel(result_card, text="No recent battle yet.", text_color="#bfdbfe", font=("Segoe UI", 16, "bold"))
+        self.pvp_summary.pack(anchor="w", padx=12, pady=(10, 4))
+        self.pvp_result = ctk.CTkTextbox(result_card, height=128, fg_color="#111827", text_color="#e5e7eb", border_width=1, border_color="#1f2937")
+        self.pvp_result.pack(fill="x", padx=10, pady=(0, 10))
+        self.pvp_result.insert("1.0", "Battle feed will appear here...")
+        self.pvp_result.configure(state="disabled")
 
         self.pvp_msg = ctk.CTkLabel(wrap, text="PvP ready.", text_color=MUTED)
         self.pvp_msg.pack(anchor="w", padx=14, pady=(0, 10))
+
+    def _set_battle_output(self, summary: str, lines: List[str], won: Optional[bool] = None):
+        if hasattr(self, "pvp_summary"):
+            col = "#bfdbfe"
+            if won is True:
+                col = "#86efac"
+            elif won is False:
+                col = "#fca5a5"
+            self.pvp_summary.configure(text=summary, text_color=col)
+        if hasattr(self, "pvp_result"):
+            self.pvp_result.configure(state="normal")
+            self.pvp_result.delete("1.0", "end")
+            self.pvp_result.insert("1.0", "\n".join(lines) if lines else "No battle details.")
+            self.pvp_result.configure(state="disabled")
+
+    def _format_round_line(self, idx: int, rnd: dict) -> str:
+        def_t = str(rnd.get("def_title", "?"))
+        chal_t = str(rnd.get("chal_title", "?"))
+        def_p = int(rnd.get("def_power", 0) or 0)
+        chal_p = int(rnd.get("chal_power", 0) or 0)
+        winner = "YOU" if str(rnd.get("winner", "")) == "defender" else "OPP"
+        tags = [str(x) for x in (rnd.get("tags", []) or []) if str(x).strip()]
+        if not tags:
+            if rnd.get("def_crit"):
+                tags.append("DEF CRIT")
+            if rnd.get("chal_crit"):
+                tags.append("CHAL CRIT")
+            if rnd.get("def_guard"):
+                tags.append("DEF GUARD")
+            if rnd.get("chal_guard"):
+                tags.append("CHAL GUARD")
+        tail = f"  [{', '.join(tags)}]" if tags else ""
+        return f"R{idx} {winner}  {def_t} ({def_p}) vs {chal_t} ({chal_p}){tail}"
 
     def _build_online(self):
         tab = self.tabs.tab("🌍 Online")
@@ -1450,12 +1539,20 @@ class LulsRNG2(ctk.CTk):
                 defender = str(req.get("defender", "Unknown"))
                 status = str(req.get("status", "pending")).lower()
                 wager = int(req.get("wager_coins", 0) or 0)
+                status_txt = status.upper()
                 col = GREEN if status == "resolved" else (RED if status == "declined" else MUTED)
+                if status == "resolved":
+                    rs = req.get("result") if isinstance(req.get("result"), dict) else {}
+                    winner = str(rs.get("winner", ""))
+                    if winner:
+                        verdict = "WIN" if winner == self.username else "LOSS"
+                        status_txt = f"RESOLVED • {verdict}"
+                        col = GREEN if verdict == "WIN" else RED
                 row = ctk.CTkFrame(self.pvp_sent, fg_color=WHITE, corner_radius=8, border_width=1, border_color=BORDER)
                 row.pack(fill="x", padx=4, pady=4)
                 ctk.CTkLabel(row, text=f"→ {defender}", text_color=TEXT, font=("Segoe UI", 12, "bold")).pack(side="left", padx=10, pady=8)
                 ctk.CTkLabel(row, text=f"{wager:,}c", text_color=AMBER).pack(side="left", padx=6)
-                ctk.CTkLabel(row, text=status.upper(), text_color=col).pack(side="right", padx=10)
+                ctk.CTkLabel(row, text=status_txt, text_color=col).pack(side="right", padx=10)
 
         if hasattr(self, "friends_scroll"):
             if not friends and not friend_in and not friend_out:
@@ -1716,15 +1813,17 @@ class LulsRNG2(ctk.CTk):
         outcome = "VICTORY" if won else "DEFEAT"
         def_score = int(result.get("def_score", result.get("my_score", 0)) or 0)
         chal_score = int(result.get("chal_score", result.get("opp_score", 0)) or 0)
-        score_txt = f"{def_score} - {chal_score}"
-        lines = [f"{outcome} ({score_txt})"]
+        score_txt = f"{def_score}-{chal_score}"
+        wager_coins = int(result.get("wager_coins", 0) or 0)
+        upset_bonus = int(result.get("upset_bonus", 0) or 0)
+        summary = f"{outcome} • {score_txt} • Wager {wager_coins:,}c"
+        if upset_bonus > 0:
+            summary += f" • Upset +{upset_bonus}c"
+        lines = []
+        lines.append(f"Style bonus: You +{int(result.get('def_style_bonus', 0) or 0)} | Opp +{int(result.get('chal_style_bonus', 0) or 0)}")
         for i, rnd in enumerate(result.get("rounds", []), start=1):
-            mark = "W" if rnd.get("winner") == "defender" else "L"
-            lines.append(
-                f"R{i} {mark}: {rnd.get('def_title')} [{rnd.get('def_power')}] "
-                f"vs {rnd.get('chal_title')} [{rnd.get('chal_power')}]"
-            )
-        self.pvp_result.configure(text="\n".join(lines), text_color=GREEN if won else RED)
+            lines.append(self._format_round_line(i, rnd))
+        self._set_battle_output(summary, lines, won=won)
 
         self.pvp_msg.configure(text="Battle resolved on cloud and synced.", text_color=GREEN)
         self.engine.save_local()
