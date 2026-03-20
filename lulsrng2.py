@@ -802,6 +802,8 @@ class LulsRNG2(ctk.CTk):
         self._notify_poll_inflight = False
         self._next_notify_poll_at = 0.0
         self._pending_local_challenge = None
+        self._last_battle_result = {}
+        self._last_battle_role = "defender"
 
         self._build_shell()
         self.after(40, self._drain_async)
@@ -1108,6 +1110,38 @@ class LulsRNG2(ctk.CTk):
         self.trade_scroll = ctk.CTkScrollableFrame(tcol, fg_color=BG, corner_radius=8, height=120)
         self.trade_scroll.pack(fill="both", expand=True, padx=8, pady=6)
 
+        arena = ctk.CTkFrame(wrap, fg_color="#f8fafc", corner_radius=10, border_width=1, border_color=BORDER)
+        arena.pack(fill="x", padx=12, pady=(0, 8))
+        self.arena_title = ctk.CTkLabel(arena, text="Battle Arena", text_color=TEXT, font=("Segoe UI", 15, "bold"))
+        self.arena_title.pack(anchor="w", padx=10, pady=(8, 4))
+        board = ctk.CTkFrame(arena, fg_color="transparent")
+        board.pack(fill="x", padx=8, pady=(0, 6))
+        left = ctk.CTkFrame(board, fg_color=WHITE, corner_radius=8, border_width=1, border_color=BORDER)
+        left.pack(side="left", fill="x", expand=True, padx=(0, 4))
+        right = ctk.CTkFrame(board, fg_color=WHITE, corner_radius=8, border_width=1, border_color=BORDER)
+        right.pack(side="left", fill="x", expand=True, padx=(4, 0))
+        self.arena_you_name = ctk.CTkLabel(left, text="You", text_color=TEXT, font=("Segoe UI", 13, "bold"))
+        self.arena_you_name.pack(anchor="w", padx=8, pady=(6, 0))
+        self.arena_you_title = ctk.CTkLabel(left, text="Title: -", text_color=MUTED)
+        self.arena_you_title.pack(anchor="w", padx=8)
+        self.arena_you_power = ctk.CTkLabel(left, text="Power: -", text_color=ACCENT)
+        self.arena_you_power.pack(anchor="w", padx=8, pady=(0, 6))
+        self.arena_opp_name = ctk.CTkLabel(right, text="Opponent", text_color=TEXT, font=("Segoe UI", 13, "bold"))
+        self.arena_opp_name.pack(anchor="w", padx=8, pady=(6, 0))
+        self.arena_opp_title = ctk.CTkLabel(right, text="Title: -", text_color=MUTED)
+        self.arena_opp_title.pack(anchor="w", padx=8)
+        self.arena_opp_power = ctk.CTkLabel(right, text="Power: -", text_color=RED)
+        self.arena_opp_power.pack(anchor="w", padx=8, pady=(0, 6))
+        self.arena_score = ctk.CTkLabel(arena, text="Score 0 - 0", text_color=TEXT, font=("Segoe UI", 18, "bold"))
+        self.arena_score.pack(anchor="w", padx=10, pady=(0, 2))
+        chips = ctk.CTkFrame(arena, fg_color="transparent")
+        chips.pack(fill="x", padx=10, pady=(0, 8))
+        self.arena_round_chips = []
+        for i in range(3):
+            chip = ctk.CTkLabel(chips, text=f"R{i+1} • -", text_color=MUTED, fg_color="#e2e8f0", corner_radius=8, padx=8, pady=4)
+            chip.pack(side="left", padx=(0, 6))
+            self.arena_round_chips.append(chip)
+
         result_card = ctk.CTkFrame(wrap, fg_color="#0f172a", corner_radius=10, border_width=1, border_color="#1e293b")
         result_card.pack(fill="x", padx=12, pady=(0, 8))
         self.pvp_summary = ctk.CTkLabel(result_card, text="No recent battle yet.", text_color="#bfdbfe", font=("Segoe UI", 16, "bold"))
@@ -1261,6 +1295,88 @@ class LulsRNG2(ctk.CTk):
                 tags.append("CHAL GUARD")
         tail = f"  [{', '.join(tags)}]" if tags else ""
         return f"R{idx} {winner}  {def_t} ({def_p}) vs {chal_t} ({chal_p}){tail}"
+
+    def _render_battle_arena(self, result: dict, role: str):
+        rounds = list(result.get("rounds", []) or [])
+        def_score = int(result.get("def_score", 0) or 0)
+        chal_score = int(result.get("chal_score", 0) or 0)
+        if role == "defender":
+            you_score, opp_score = def_score, chal_score
+            you_name = str(result.get("defender", self.username or "You"))
+            opp_name = str(result.get("challenger", "Opponent"))
+        else:
+            you_score, opp_score = chal_score, def_score
+            you_name = str(result.get("challenger", self.username or "You"))
+            opp_name = str(result.get("defender", "Opponent"))
+        self.arena_you_name.configure(text=you_name)
+        self.arena_opp_name.configure(text=opp_name)
+        self.arena_score.configure(text=f"Score {you_score} - {opp_score}", text_color=GREEN if you_score >= opp_score else RED)
+        for i, chip in enumerate(self.arena_round_chips):
+            if i >= len(rounds):
+                chip.configure(text=f"R{i+1} • -", text_color=MUTED, fg_color="#e2e8f0")
+                continue
+            rnd = rounds[i]
+            if role == "defender":
+                you_title = str(rnd.get("def_title", "?"))
+                opp_title = str(rnd.get("chal_title", "?"))
+                you_power = int(rnd.get("def_power", 0) or 0)
+                opp_power = int(rnd.get("chal_power", 0) or 0)
+                you_win = str(rnd.get("winner", "")) == "defender"
+            else:
+                you_title = str(rnd.get("chal_title", "?"))
+                opp_title = str(rnd.get("def_title", "?"))
+                you_power = int(rnd.get("chal_power", 0) or 0)
+                opp_power = int(rnd.get("def_power", 0) or 0)
+                you_win = str(rnd.get("winner", "")) == "challenger"
+            chip.configure(
+                text=f"R{i+1} • {'WIN' if you_win else 'LOSS'}",
+                text_color=GREEN if you_win else RED,
+                fg_color="#dcfce7" if you_win else "#fee2e2",
+            )
+            if i == len(rounds) - 1:
+                self.arena_you_title.configure(text=f"Title: {you_title}", text_color=RARITY_COLOR.get(title_rarity(you_title), MUTED))
+                self.arena_opp_title.configure(text=f"Title: {opp_title}", text_color=RARITY_COLOR.get(title_rarity(opp_title), MUTED))
+                self.arena_you_power.configure(text=f"Power: {you_power}", text_color=GREEN if you_power >= opp_power else AMBER)
+                self.arena_opp_power.configure(text=f"Power: {opp_power}", text_color=RED if opp_power > you_power else AMBER)
+
+    def _show_battle_result(self, result: dict, role: str):
+        self._last_battle_result = dict(result or {})
+        self._last_battle_role = role
+        def_score = int(result.get("def_score", 0) or 0)
+        chal_score = int(result.get("chal_score", 0) or 0)
+        if role == "defender":
+            you_won = def_score > chal_score or (def_score == chal_score and str(result.get("winner", "")) == str(result.get("defender", "")))
+        else:
+            you_won = chal_score > def_score or (def_score == chal_score and str(result.get("winner", "")) == str(result.get("challenger", "")))
+        outcome = "VICTORY" if you_won else "DEFEAT"
+        score_txt = f"{def_score}-{chal_score}" if role == "defender" else f"{chal_score}-{def_score}"
+        wager_coins = int(result.get("wager_coins", 0) or 0)
+        upset_bonus = int(result.get("upset_bonus", 0) or 0)
+        summary = f"{outcome} • {score_txt} • Wager {wager_coins:,}c"
+        if upset_bonus > 0:
+            summary += f" • Upset +{upset_bonus}c"
+        lines = []
+        if role == "defender":
+            lines.append(f"Style bonus: You +{int(result.get('def_style_bonus', 0) or 0)} | Opp +{int(result.get('chal_style_bonus', 0) or 0)}")
+        else:
+            lines.append(f"Style bonus: You +{int(result.get('chal_style_bonus', 0) or 0)} | Opp +{int(result.get('def_style_bonus', 0) or 0)}")
+        for i, rnd in enumerate(result.get("rounds", []), start=1):
+            if role == "defender":
+                lines.append(self._format_round_line(i, rnd))
+            else:
+                swap = {
+                    "def_title": rnd.get("chal_title"),
+                    "def_power": rnd.get("chal_power"),
+                    "def_rarity": rnd.get("chal_rarity"),
+                    "chal_title": rnd.get("def_title"),
+                    "chal_power": rnd.get("def_power"),
+                    "chal_rarity": rnd.get("def_rarity"),
+                    "winner": "defender" if str(rnd.get("winner", "")) == "challenger" else "challenger",
+                    "tags": rnd.get("tags", []),
+                }
+                lines.append(self._format_round_line(i, swap))
+        self._set_battle_output(summary, lines, won=you_won)
+        self._render_battle_arena(result, role=role)
 
     def _build_online(self):
         tab = self.tabs.tab("🌍 Online")
@@ -1668,8 +1784,8 @@ class LulsRNG2(ctk.CTk):
                 wager = int(req.get("wager_coins", 0) or 0)
                 status_txt = status.upper()
                 col = GREEN if status == "resolved" else (RED if status == "declined" else MUTED)
+                rs = req.get("result") if isinstance(req.get("result"), dict) else {}
                 if status == "resolved":
-                    rs = req.get("result") if isinstance(req.get("result"), dict) else {}
                     winner = str(rs.get("winner", ""))
                     if winner:
                         verdict = "WIN" if winner == self.username else "LOSS"
@@ -1680,6 +1796,8 @@ class LulsRNG2(ctk.CTk):
                 ctk.CTkLabel(row, text=f"→ {defender}", text_color=TEXT, font=("Segoe UI", 12, "bold")).pack(side="left", padx=10, pady=8)
                 ctk.CTkLabel(row, text=f"{wager:,}c", text_color=AMBER).pack(side="left", padx=6)
                 ctk.CTkLabel(row, text=status_txt, text_color=col).pack(side="right", padx=10)
+                if status == "resolved" and rs:
+                    ctk.CTkButton(row, text="View", width=64, fg_color=ACCENT, hover_color=ACCENT2, command=lambda r=rs: self._show_battle_result(r, "challenger")).pack(side="right", padx=6)
 
         if hasattr(self, "friends_scroll"):
             if not friends and not friend_in and not friend_out:
@@ -1948,20 +2066,7 @@ class LulsRNG2(ctk.CTk):
             return
 
         won, result = payload
-        outcome = "VICTORY" if won else "DEFEAT"
-        def_score = int(result.get("def_score", result.get("my_score", 0)) or 0)
-        chal_score = int(result.get("chal_score", result.get("opp_score", 0)) or 0)
-        score_txt = f"{def_score}-{chal_score}"
-        wager_coins = int(result.get("wager_coins", 0) or 0)
-        upset_bonus = int(result.get("upset_bonus", 0) or 0)
-        summary = f"{outcome} • {score_txt} • Wager {wager_coins:,}c"
-        if upset_bonus > 0:
-            summary += f" • Upset +{upset_bonus}c"
-        lines = []
-        lines.append(f"Style bonus: You +{int(result.get('def_style_bonus', 0) or 0)} | Opp +{int(result.get('chal_style_bonus', 0) or 0)}")
-        for i, rnd in enumerate(result.get("rounds", []), start=1):
-            lines.append(self._format_round_line(i, rnd))
-        self._set_battle_output(summary, lines, won=won)
+        self._show_battle_result(result, "defender")
 
         self.pvp_msg.configure(text="Battle resolved on cloud and synced.", text_color=GREEN)
         self._pending_local_challenge = None
