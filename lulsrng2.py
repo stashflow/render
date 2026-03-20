@@ -121,7 +121,7 @@ def load_cloud_config() -> Tuple[str, str]:
 # -----------------------------------------------------------------------------
 # Gameplay model
 # -----------------------------------------------------------------------------
-RARITY_ORDER = ["Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic"]
+RARITY_ORDER = ["Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Divine"]
 RARITY_COLOR = {
     "Common": "#94a3b8",
     "Uncommon": "#22c55e",
@@ -129,6 +129,7 @@ RARITY_COLOR = {
     "Epic": "#a855f7",
     "Legendary": "#f59e0b",
     "Mythic": "#ef4444",
+    "Divine": "#06b6d4",
 }
 RARITY_WEIGHT = {
     "Common": 6200,
@@ -137,6 +138,7 @@ RARITY_WEIGHT = {
     "Epic": 240,
     "Legendary": 55,
     "Mythic": 5,
+    "Divine": 1,
 }
 RARITY_POWER = {
     "Common": 1,
@@ -145,6 +147,7 @@ RARITY_POWER = {
     "Epic": 20,
     "Legendary": 55,
     "Mythic": 140,
+    "Divine": 320,
 }
 RARITY_COINS = {
     "Common": 1,
@@ -153,6 +156,7 @@ RARITY_COINS = {
     "Epic": 13,
     "Legendary": 40,
     "Mythic": 130,
+    "Divine": 420,
 }
 TITLES = {
     "Common": ["Gatekeeper", "Dust Walker", "Stone Foot", "Plain Blade", "Drift Soul", "Mild Hero"],
@@ -161,6 +165,7 @@ TITLES = {
     "Epic": ["Soulreaper", "Aether Weave", "Ruinbringer", "Chaos Bloom", "Phantom King", "Flux Guard"],
     "Legendary": ["Dragon Sovereign", "Eternal Flame", "Starshatter", "The Undying", "Doomforged", "Skybreaker"],
     "Mythic": ["Abyssal God", "Null Sovereign", "Heavenbreaker", "Cosmos Ender", "Singularity", "First Light"],
+    "Divine": ["Astral Archon", "Crown of Aeons", "Paragon Zero", "Heaven's Verdict", "Omega Saint", "Infinite Oracle"],
 }
 
 
@@ -189,6 +194,7 @@ class State:
     total_rift_wins: int = 0
     total_wins: int = 0
     total_losses: int = 0
+    updated_at_ts: float = 0.0
     best_rarity: str = "Common"
     inventory: Dict[str, int] = field(default_factory=dict)
     collection: List[str] = field(default_factory=list)
@@ -217,6 +223,7 @@ class State:
             "total_rift_wins": self.total_rift_wins,
             "total_wins": self.total_wins,
             "total_losses": self.total_losses,
+            "updated_at_ts": self.updated_at_ts,
             "best_rarity": self.best_rarity,
             "highest_rarity_pulled": self.best_rarity,
             "equipped_title": equipped,
@@ -250,6 +257,10 @@ class State:
         s.total_rift_wins = max(0, int(d.get("total_rift_wins", 0)))
         s.total_wins = max(0, int(d.get("total_wins", 0)))
         s.total_losses = max(0, int(d.get("total_losses", 0)))
+        try:
+            s.updated_at_ts = float(d.get("updated_at_ts", d.get("updated_at", 0.0)) or 0.0)
+        except Exception:
+            s.updated_at_ts = 0.0
 
         br = str(d.get("best_rarity", d.get("highest_rarity_pulled", "Common")))
         s.best_rarity = br if br in RARITY_ORDER else "Common"
@@ -277,7 +288,9 @@ class Engine:
     def __init__(self, st: Optional[State] = None):
         self.s = st or State()
 
-    def save_local(self):
+    def save_local(self, touch: bool = True):
+        if touch:
+            self.s.updated_at_ts = time.time()
         try:
             with open(LOCAL_SAVE, "w", encoding="utf-8") as f:
                 json.dump(self.s.to_dict(), f, indent=2)
@@ -307,7 +320,7 @@ class Engine:
         w = dict(RARITY_WEIGHT)
         w["Common"] *= max(0.38, 1.0 - self.s.rebirths * 0.08)
         w["Uncommon"] *= max(0.55, 1.0 - self.s.rebirths * 0.05)
-        for r in ["Rare", "Epic", "Legendary", "Mythic"]:
+        for r in ["Rare", "Epic", "Legendary", "Mythic", "Divine"]:
             w[r] *= shift
 
         if self.s.pity >= PITY_SOFT:
@@ -317,6 +330,7 @@ class Engine:
         if self.s.pity >= PITY_HARD:
             w["Legendary"] *= 9.0
             w["Mythic"] *= 7.0
+            w["Divine"] *= 5.0
 
         if self.s.lucky_rolls_remaining > 0:
             w["Common"] *= 0.38
@@ -325,12 +339,13 @@ class Engine:
             w["Epic"] *= 2.8
             w["Legendary"] *= 3.0
             w["Mythic"] *= 2.8
+            w["Divine"] *= 2.0
         return w
 
     def roll(self) -> Tuple[str, str, int, bool, str]:
         pity_proc = self.s.pity >= PITY_HARD
         if pity_proc:
-            rarity = random.choices(["Legendary", "Mythic"], weights=[90, 10], k=1)[0]
+            rarity = random.choices(["Legendary", "Mythic", "Divine"], weights=[890, 100, 10], k=1)[0]
         else:
             w = self._weights()
             rarities = list(w.keys())
@@ -738,6 +753,20 @@ class LulsRNG2(ctk.CTk):
 
         LoginWindow(self, self.api, self._on_auth_done)
 
+    def _state_freshness(self, st: Optional[State], fallback_file_mtime: float = 0.0) -> float:
+        if not st:
+            return float(fallback_file_mtime or 0.0)
+        try:
+            return max(float(getattr(st, "updated_at_ts", 0.0) or 0.0), float(fallback_file_mtime or 0.0))
+        except Exception:
+            return float(fallback_file_mtime or 0.0)
+
+    def _local_file_mtime(self) -> float:
+        try:
+            return float(os.path.getmtime(LOCAL_SAVE))
+        except Exception:
+            return 0.0
+
     def report_callback_exception(self, exc, val, tb):
         try:
             text = "".join(traceback.format_exception(exc, val, tb))
@@ -1074,11 +1103,28 @@ class LulsRNG2(ctk.CTk):
     def _on_auth_done(self, username: str, cloud_state: Optional[dict], cloud_login_ok: bool):
         self.username = username
         self.online_enabled = bool(username and cloud_login_ok)
+        local_state = self.engine.s
+        local_fresh = self._state_freshness(local_state, self._local_file_mtime())
+        cloud_parsed = None
+        cloud_fresh = 0.0
         if cloud_state:
             try:
-                self.engine = Engine(State.from_dict(cloud_state))
+                cloud_parsed = State.from_dict(cloud_state)
+                cloud_fresh = self._state_freshness(cloud_parsed, 0.0)
             except Exception as e:
                 log_exc("cloud state parse failed", e)
+
+        # Newest state wins on login/bootstrap.
+        if cloud_parsed and cloud_fresh > local_fresh:
+            self.engine = Engine(cloud_parsed)
+            self.engine.save_local(touch=False)
+            log_line("Bootstrap selected cloud state (newer).")
+        else:
+            self.engine = Engine(local_state)
+            if self.online_enabled and self.username:
+                # Local is newer (or equal): push local to cloud once after login.
+                self._save_cloud_state(self.username, self.engine.s.to_dict())
+            log_line("Bootstrap selected local state (newer/equal).")
         self.deiconify()
         self._refresh_all()
         if self.online_enabled:
@@ -1519,7 +1565,7 @@ class LulsRNG2(ctk.CTk):
         )
 
     def _accept_friend_request(self, req_id: int):
-        self.bus.run(lambda: self.api.rpc("accept_friend_request", req_id), lambda ok, res: self._refresh_pvp())
+        self.bus.run(lambda: self.api.rpc("accept_friend_request", req_id, self.username), lambda ok, res: self._refresh_pvp())
 
     def _decline_friend_request(self, req_id: int):
         self.bus.run(lambda: self.api.rpc("decline_friend_request", req_id), lambda ok, res: self._refresh_pvp())
@@ -1552,47 +1598,21 @@ class LulsRNG2(ctk.CTk):
         if not self.online_enabled:
             return
         tid = int(trade.get("id", 0) or 0)
-        sender = str(trade.get("sender", ""))
-        offer_t = str(trade.get("offered_title", ""))
-        want_t = str(trade.get("requested_title", ""))
-        offer_c = int(trade.get("offered_count", 1) or 1)
-        want_c = int(trade.get("requested_count", 1) or 1)
-        if self.engine.s.inventory.get(want_t, 0) < want_c:
-            self.pvp_msg.configure(text=f"Need {want_c}x {want_t} to accept.", text_color=RED)
+        if tid <= 0:
+            self.pvp_msg.configure(text="Invalid trade request.", text_color=RED)
             return
 
         def do_trade():
-            prof = self.api.rpc("get_player_profile", sender)
-            if not prof:
-                return False, f"Sender profile load failed: {self.api.last_error}"
-            sender_state = State.from_dict(prof.get("data", {}) or {})
-            if sender_state.inventory.get(offer_t, 0) < offer_c:
-                return False, "Sender no longer has enough offered titles."
-
-            my_inv = self.engine.s.inventory
-            s_inv = sender_state.inventory
-            my_inv[want_t] = max(0, my_inv.get(want_t, 0) - want_c)
-            if my_inv[want_t] <= 0:
-                my_inv.pop(want_t, None)
-            my_inv[offer_t] = my_inv.get(offer_t, 0) + offer_c
-
-            s_inv[offer_t] = max(0, s_inv.get(offer_t, 0) - offer_c)
-            if s_inv[offer_t] <= 0:
-                s_inv.pop(offer_t, None)
-            s_inv[want_t] = s_inv.get(want_t, 0) + want_c
-
-            if offer_t not in self.engine.s.collection:
-                self.engine.s.collection.append(offer_t)
-            if want_t not in sender_state.collection:
-                sender_state.collection.append(want_t)
-
+            res = self.api.rpc("accept_trade", tid, self.username)
+            if not res:
+                return False, f"Trade resolve failed: {self.api.last_error}"
+            ok2, payload = res
+            if not ok2:
+                return False, str(payload)
+            receiver_state = (payload or {}).get("receiver_state", {})
+            self.engine.s = State.from_dict(receiver_state)
             self.engine.save_local()
-            ok_self = self._save_cloud_state(self.username, self.engine.s.to_dict())
-            ok_sender = self._save_cloud_state(sender, sender_state.to_dict())
-            ok_resolve = bool(self.api.rpc("resolve_trade", tid))
-            if not (ok_self and ok_sender and ok_resolve):
-                return False, f"Trade sync failed: {self.api.last_error}"
-            return True, "Trade accepted."
+            return True, "Trade accepted and synced."
 
         self.bus.run(do_trade, self._after_trade_done)
 
@@ -1672,7 +1692,9 @@ class LulsRNG2(ctk.CTk):
 
         won, result = payload
         outcome = "VICTORY" if won else "DEFEAT"
-        score_txt = f"{result.get('my_score', 0)} - {result.get('opp_score', 0)}"
+        def_score = int(result.get("def_score", result.get("my_score", 0)) or 0)
+        chal_score = int(result.get("chal_score", result.get("opp_score", 0)) or 0)
+        score_txt = f"{def_score} - {chal_score}"
         lines = [f"{outcome} ({score_txt})"]
         for i, rnd in enumerate(result.get("rounds", []), start=1):
             mark = "W" if rnd.get("winner") == "defender" else "L"

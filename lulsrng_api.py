@@ -25,8 +25,8 @@ from fastapi.responses import JSONResponse
 DB_URL = os.getenv("LULSRNG_DB_URL", "").strip()
 API_TOKEN = os.getenv("LULSRNG_API_TOKEN", "").strip()
 
-RARITY_ORDER = ["Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic"]
-RARITY_POWER = {"Common": 1, "Uncommon": 3, "Rare": 8, "Epic": 20, "Legendary": 55, "Mythic": 140}
+RARITY_ORDER = ["Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Divine"]
+RARITY_POWER = {"Common": 1, "Uncommon": 3, "Rare": 8, "Epic": 20, "Legendary": 55, "Mythic": 140, "Divine": 320}
 TITLES = {
     "Common": ["Gatekeeper", "Dust Walker", "Stone Foot", "Plain Blade", "Drift Soul", "Mild Hero"],
     "Uncommon": ["Bog Walker", "Night Stalker", "Cursed Coin", "Green Fang", "Echo Scout", "Iron Skin"],
@@ -34,6 +34,7 @@ TITLES = {
     "Epic": ["Soulreaper", "Aether Weave", "Ruinbringer", "Chaos Bloom", "Phantom King", "Flux Guard"],
     "Legendary": ["Dragon Sovereign", "Eternal Flame", "Starshatter", "The Undying", "Doomforged", "Skybreaker"],
     "Mythic": ["Abyssal God", "Null Sovereign", "Heavenbreaker", "Cosmos Ender", "Singularity", "First Light"],
+    "Divine": ["Astral Archon", "Crown of Aeons", "Paragon Zero", "Heaven's Verdict", "Omega Saint", "Infinite Oracle"],
 }
 
 
@@ -413,6 +414,8 @@ class Database:
             return False, "Cannot battle yourself."
         wager_coins = max(0, int(wager_coins or 0))
         wager_shards = max(0, int(wager_shards or 0))
+        if not self._exec("SELECT username FROM players WHERE username=%s", (defender,), fetch="one"):
+            return False, "Defender username not found."
 
         # Hard anti-spam guardrail: one request every 5 seconds per challenger.
         recent = self._exec(
@@ -667,9 +670,91 @@ class Database:
         self._exec("UPDATE title_trades SET status='resolved' WHERE id=%s AND status='pending'", (trade_id,))
         return True
 
+    def accept_trade(self, trade_id: int, receiver: str):
+        if not self.conn and not self.reconnect_if_needed(force=True):
+            return False, "DB unavailable"
+        if not self.conn:
+            return False, "DB unavailable"
+        with self.lock:
+            try:
+                cur = self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                cur.execute(
+                    "SELECT id,sender,receiver,offered_title,offered_count,requested_title,requested_count,status "
+                    "FROM title_trades WHERE id=%s FOR UPDATE",
+                    (trade_id,),
+                )
+                tr = cur.fetchone()
+                if not tr:
+                    self.conn.rollback()
+                    return False, "Trade not found."
+                if tr["status"] != "pending":
+                    self.conn.rollback()
+                    return False, "Trade is no longer pending."
+                if tr["receiver"] != receiver:
+                    self.conn.rollback()
+                    return False, "Only the receiver can accept this trade."
+
+                sender = tr["sender"]
+                offered_title = str(tr.get("offered_title", ""))
+                requested_title = str(tr.get("requested_title", ""))
+                offered_count = max(1, int(tr.get("offered_count", 1) or 1))
+                requested_count = max(1, int(tr.get("requested_count", 1) or 1))
+
+                cur.execute("SELECT data FROM players WHERE username=%s FOR UPDATE", (sender,))
+                s_row = cur.fetchone()
+                cur.execute("SELECT data FROM players WHERE username=%s FOR UPDATE", (receiver,))
+                r_row = cur.fetchone()
+                if not s_row or not r_row:
+                    self.conn.rollback()
+                    return False, "Missing sender/receiver profile."
+
+                s_state = PlayerState.from_dict(s_row["data"] or {})
+                r_state = PlayerState.from_dict(r_row["data"] or {})
+                s_inv = s_state.inventory or {}
+                r_inv = r_state.inventory or {}
+
+                if int(s_inv.get(offered_title, 0) or 0) < offered_count:
+                    self.conn.rollback()
+                    return False, "Sender no longer has enough offered titles."
+                if int(r_inv.get(requested_title, 0) or 0) < requested_count:
+                    self.conn.rollback()
+                    return False, "Receiver does not have required requested titles."
+
+                s_inv[offered_title] = max(0, int(s_inv.get(offered_title, 0)) - offered_count)
+                if s_inv[offered_title] <= 0:
+                    s_inv.pop(offered_title, None)
+                r_inv[offered_title] = int(r_inv.get(offered_title, 0) or 0) + offered_count
+
+                r_inv[requested_title] = max(0, int(r_inv.get(requested_title, 0)) - requested_count)
+                if r_inv[requested_title] <= 0:
+                    r_inv.pop(requested_title, None)
+                s_inv[requested_title] = int(s_inv.get(requested_title, 0) or 0) + requested_count
+
+                if offered_title and offered_title not in (r_state.collection or []):
+                    r_state.collection = (r_state.collection or []) + [offered_title]
+                if requested_title and requested_title not in (s_state.collection or []):
+                    s_state.collection = (s_state.collection or []) + [requested_title]
+                s_state.title_trades_completed = int(s_state.title_trades_completed or 0) + 1
+                r_state.title_trades_completed = int(r_state.title_trades_completed or 0) + 1
+
+                cur.execute("UPDATE players SET data=%s, last_seen=NOW() WHERE username=%s", (json.dumps(s_state.to_dict()), sender))
+                cur.execute("UPDATE players SET data=%s, last_seen=NOW() WHERE username=%s", (json.dumps(r_state.to_dict()), receiver))
+                cur.execute("UPDATE title_trades SET status='resolved' WHERE id=%s AND status='pending'", (trade_id,))
+                self.conn.commit()
+                return True, {"receiver_state": r_state.to_dict(), "sender": sender}
+            except Exception as e:
+                self.last_error = str(e)
+                try:
+                    self.conn.rollback()
+                except Exception:
+                    pass
+                return False, str(e)
+
     def send_friend_request(self, sender: str, receiver: str):
         if sender == receiver:
             return False, "Can't add yourself"
+        if not self._exec("SELECT username FROM players WHERE username=%s", (receiver,), fetch="one"):
+            return False, "Friend username not found"
         if self.are_friends(sender, receiver):
             return False, "Already friends"
         existing = self._exec(
@@ -704,12 +789,14 @@ class Database:
         )
         return rows or []
 
-    def accept_friend_request(self, req_id: int):
+    def accept_friend_request(self, req_id: int, receiver: str = ""):
         row = self._exec(
             "SELECT sender,receiver FROM friend_requests WHERE id=%s AND status='pending'",
             (req_id,), fetch="one"
         )
         if not row:
+            return False
+        if receiver and str(row.get("receiver", "")) != str(receiver):
             return False
         a, b = self._norm_pair(row["sender"], row["receiver"])
         ok1 = self._exec("INSERT INTO friends(user_a,user_b) VALUES(%s,%s) ON CONFLICT DO NOTHING", (a, b))
@@ -761,7 +848,7 @@ ALLOWED_METHODS = {
     "get_player_profile",
     "send_battle_request", "get_pending_requests", "get_sent_requests", "decline_request", "resolve_battle", "accept_battle",
     "get_active_boss_race", "claim_boss_race",
-    "send_trade_request", "get_incoming_trades", "get_outgoing_trades", "decline_trade", "resolve_trade",
+    "send_trade_request", "get_incoming_trades", "get_outgoing_trades", "decline_trade", "resolve_trade", "accept_trade",
     "are_friends", "send_friend_request", "get_incoming_friend_requests", "get_outgoing_friend_requests",
     "accept_friend_request", "decline_friend_request", "get_friends",
 }
