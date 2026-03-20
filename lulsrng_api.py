@@ -414,6 +414,8 @@ class Database:
             return False, "Cannot battle yourself."
         wager_coins = max(0, int(wager_coins or 0))
         wager_shards = max(0, int(wager_shards or 0))
+        if not self._exec("SELECT username FROM players WHERE username=%s", (challenger,), fetch="one"):
+            return False, "Challenger username not found."
         if not self._exec("SELECT username FROM players WHERE username=%s", (defender,), fetch="one"):
             return False, "Defender username not found."
 
@@ -632,8 +634,24 @@ class Database:
     def send_trade_request(self, sender: str, receiver: str, offered_title: str, offered_count: int, requested_title: str, requested_count: int):
         if sender == receiver:
             return False, "Can't trade with yourself"
+        offered_title = str(offered_title or "").strip()
+        requested_title = str(requested_title or "").strip()
+        offered_count = max(1, int(offered_count or 1))
+        requested_count = max(1, int(requested_count or 1))
+        if not offered_title or not requested_title:
+            return False, "Trade titles are required."
+        if not self._exec("SELECT username FROM players WHERE username=%s", (sender,), fetch="one"):
+            return False, "Sender username not found."
+        if not self._exec("SELECT username FROM players WHERE username=%s", (receiver,), fetch="one"):
+            return False, "Receiver username not found."
         if not self.are_friends(sender, receiver):
             return False, "Trading is friends-only. Add each other first."
+        row = self._exec("SELECT data FROM players WHERE username=%s", (sender,), fetch="one")
+        if not row:
+            return False, "Sender profile missing."
+        sender_state = PlayerState.from_dict(row.get("data") or {})
+        if int((sender_state.inventory or {}).get(offered_title, 0) or 0) < offered_count:
+            return False, "You do not have enough offered titles."
         existing = self._exec(
             "SELECT id FROM title_trades WHERE sender=%s AND receiver=%s AND status='pending' "
             "AND offered_title=%s AND requested_title=%s",
@@ -753,6 +771,8 @@ class Database:
     def send_friend_request(self, sender: str, receiver: str):
         if sender == receiver:
             return False, "Can't add yourself"
+        if not self._exec("SELECT username FROM players WHERE username=%s", (sender,), fetch="one"):
+            return False, "Sender username not found"
         if not self._exec("SELECT username FROM players WHERE username=%s", (receiver,), fetch="one"):
             return False, "Friend username not found"
         if self.are_friends(sender, receiver):

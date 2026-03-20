@@ -745,6 +745,8 @@ class LulsRNG2(ctk.CTk):
         self._battle_action_busy = False
         self._next_battle_send_at = 0.0
         self._next_battle_action_at = 0.0
+        self._pvp_refresh_inflight = False
+        self._online_refresh_inflight = False
 
         self._build_shell()
         self.after(40, self._drain_async)
@@ -1255,11 +1257,15 @@ class LulsRNG2(ctk.CTk):
         if not self.online_enabled:
             self.online_state.configure(text="Offline mode (no cloud login).", text_color=RED)
             return
+        if self._online_refresh_inflight:
+            return
+        self._online_refresh_inflight = True
         self.online_state.configure(text="Loading online players...", text_color=MUTED)
         self.bus.run(lambda: (self.api.rpc("get_online_players"), self.api.last_error), self._render_online_done)
         self._refresh_boss_race()
 
     def _render_online_done(self, ok: bool, result):
+        self._online_refresh_inflight = False
         rows, err = (result if isinstance(result, tuple) else (None, "Unknown error"))
         for w in self.online_list.winfo_children():
             w.destroy()
@@ -1370,22 +1376,34 @@ class LulsRNG2(ctk.CTk):
         if not self.online_enabled:
             self.pvp_msg.configure(text="Offline mode: PvP inbox requires cloud login.", text_color=RED)
             return
+        if self._pvp_refresh_inflight:
+            return
+        self._pvp_refresh_inflight = True
         self.pvp_msg.configure(text="Loading PvP/social/trade data...", text_color=MUTED)
 
         def job():
+            errors = []
+            def safe_call(method_name: str):
+                out = self.api.rpc(method_name, self.username)
+                if out is None:
+                    errors.append(f"{method_name}: {self.api.last_error}")
+                    return []
+                return out
             return {
-                "incoming": self.api.rpc("get_pending_requests", self.username) or [],
-                "sent": self.api.rpc("get_sent_requests", self.username) or [],
-                "friends": self.api.rpc("get_friends", self.username) or [],
-                "friend_in": self.api.rpc("get_incoming_friend_requests", self.username) or [],
-                "friend_out": self.api.rpc("get_outgoing_friend_requests", self.username) or [],
-                "trade_in": self.api.rpc("get_incoming_trades", self.username) or [],
-                "trade_out": self.api.rpc("get_outgoing_trades", self.username) or [],
+                "incoming": safe_call("get_pending_requests"),
+                "sent": safe_call("get_sent_requests"),
+                "friends": safe_call("get_friends"),
+                "friend_in": safe_call("get_incoming_friend_requests"),
+                "friend_out": safe_call("get_outgoing_friend_requests"),
+                "trade_in": safe_call("get_incoming_trades"),
+                "trade_out": safe_call("get_outgoing_trades"),
+                "_errors": errors,
             }
 
         self.bus.run(job, self._render_pvp_lists_done)
 
     def _render_pvp_lists_done(self, ok: bool, payload):
+        self._pvp_refresh_inflight = False
         for w in self.pvp_inbox.winfo_children():
             w.destroy()
         for w in self.pvp_sent.winfo_children():
@@ -1491,7 +1509,11 @@ class LulsRNG2(ctk.CTk):
                 ctk.CTkLabel(row, text=f"⬆ To {receiver}: {offer_c}x {offer_t} ↔ {want_c}x {want_t}", text_color=TEXT).pack(side="left", padx=8, pady=6)
                 ctk.CTkLabel(row, text=status, text_color=col).pack(side="right", padx=8)
 
-        self.pvp_msg.configure(text="PvP/social/trade updated.", text_color=GREEN)
+        errors = payload.get("_errors", []) if isinstance(payload, dict) else []
+        if errors:
+            self.pvp_msg.configure(text=f"PvP partial sync issues: {' | '.join(errors[:2])}", text_color=AMBER)
+        else:
+            self.pvp_msg.configure(text="PvP/social/trade updated.", text_color=GREEN)
 
     def _send_battle(self):
         now = time.time()
@@ -1565,10 +1587,10 @@ class LulsRNG2(ctk.CTk):
         )
 
     def _accept_friend_request(self, req_id: int):
-        self.bus.run(lambda: self.api.rpc("accept_friend_request", req_id, self.username), lambda ok, res: self._refresh_pvp())
+        self.bus.run(lambda: self.api.rpc("accept_friend_request", req_id, self.username), lambda ok, res: self._after_simple_pvp_action(res))
 
     def _decline_friend_request(self, req_id: int):
-        self.bus.run(lambda: self.api.rpc("decline_friend_request", req_id), lambda ok, res: self._refresh_pvp())
+        self.bus.run(lambda: self.api.rpc("decline_friend_request", req_id), lambda ok, res: self._after_simple_pvp_action(res))
 
     def _send_trade_request(self):
         if not self.online_enabled:
@@ -1628,7 +1650,7 @@ class LulsRNG2(ctk.CTk):
             self._sync_state()
 
     def _decline_trade(self, trade_id: int):
-        self.bus.run(lambda: self.api.rpc("decline_trade", trade_id), lambda ok, res: self._refresh_pvp())
+        self.bus.run(lambda: self.api.rpc("decline_trade", trade_id), lambda ok, res: self._after_simple_pvp_action(res))
 
     def _after_simple_pvp_action(self, res):
         if not res:
@@ -1719,6 +1741,12 @@ class LulsRNG2(ctk.CTk):
         def done(ok, res):
             self._battle_action_busy = False
             self._next_battle_action_at = time.time() + BATTLE_ACTION_COOLDOWN_SEC
+            if not res:
+                self.pvp_msg.configure(text=f"Decline failed: {self.api.last_error}", text_color=RED)
+            elif isinstance(res, bool) and res:
+                self.pvp_msg.configure(text="Battle request declined.", text_color=GREEN)
+            else:
+                self.pvp_msg.configure(text="Battle decline did not complete.", text_color=RED)
             self._refresh_pvp()
         self.bus.run(lambda: self.api.rpc("decline_request", req_id), done)
 
