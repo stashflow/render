@@ -79,6 +79,7 @@ ROLL_CHEST_INTERVAL = 25
 SLOW_TICK_MS = 400
 HEARTBEAT_MS = 3000
 LIVE_REFRESH_MS = 2500
+NOTIFY_POLL_SEC = 4.0
 
 
 def log_line(msg: str):
@@ -796,6 +797,11 @@ class LulsRNG2(ctk.CTk):
         self._next_battle_action_at = 0.0
         self._pvp_refresh_inflight = False
         self._online_refresh_inflight = False
+        self._incoming_req_ids_seen = set()
+        self._incoming_bootstrapped = False
+        self._notify_poll_inflight = False
+        self._next_notify_poll_at = 0.0
+        self._pending_local_challenge = None
 
         self._build_shell()
         self.after(40, self._drain_async)
@@ -1037,7 +1043,17 @@ class LulsRNG2(ctk.CTk):
         self.btn_send_battle.pack(side="left", padx=6)
         ctk.CTkButton(row, text="Refresh", fg_color=PINK, hover_color="#db2777", command=self._refresh_pvp).pack(side="left", padx=6)
         ctk.CTkButton(row, text="Set Best 3", fg_color=RED, hover_color="#dc2626", command=self._set_best_three).pack(side="left", padx=6)
+        self.lbl_incoming_badge = ctk.CTkLabel(row, text="0 incoming", text_color=MUTED, fg_color="#f1f5f9", corner_radius=8, padx=8, pady=3)
+        self.lbl_incoming_badge.pack(side="left", padx=(10, 0))
         ctk.CTkLabel(wrap, text="Combat engine: style bonuses, clutch momentum, crits, and guards.", text_color=MUTED).pack(anchor="w", padx=14, pady=(0, 2))
+
+        wait_card = ctk.CTkFrame(wrap, fg_color="#f8fafc", corner_radius=10, border_width=1, border_color=BORDER)
+        wait_card.pack(fill="x", padx=12, pady=(4, 8))
+        ctk.CTkLabel(wait_card, text="Waiting Room", text_color=TEXT, font=("Segoe UI", 14, "bold")).pack(anchor="w", padx=10, pady=(8, 2))
+        self.waiting_status = ctk.CTkLabel(wait_card, text="No active outgoing battle request.", text_color=MUTED)
+        self.waiting_status.pack(anchor="w", padx=10)
+        self.waiting_meta = ctk.CTkLabel(wait_card, text="", text_color=MUTED, font=("Segoe UI", 11))
+        self.waiting_meta.pack(anchor="w", padx=10, pady=(0, 6))
 
         pane = ctk.CTkFrame(wrap, fg_color="transparent")
         pane.pack(fill="both", expand=True, padx=12, pady=(4, 8))
@@ -1103,6 +1119,115 @@ class LulsRNG2(ctk.CTk):
 
         self.pvp_msg = ctk.CTkLabel(wrap, text="PvP ready.", text_color=MUTED)
         self.pvp_msg.pack(anchor="w", padx=14, pady=(0, 10))
+
+    def _parse_api_time(self, raw: str) -> Optional[datetime]:
+        txt = str(raw or "").strip()
+        if not txt:
+            return None
+        try:
+            return datetime.fromisoformat(txt.replace("Z", "+00:00"))
+        except Exception:
+            return None
+
+    def _human_wait(self, created_at_raw: str) -> str:
+        dt = self._parse_api_time(created_at_raw)
+        if not dt:
+            return "just now"
+        try:
+            secs = max(0, int((datetime.now(dt.tzinfo) - dt).total_seconds()))
+        except Exception:
+            secs = 0
+        if secs < 60:
+            return f"{secs}s ago"
+        mins = secs // 60
+        return f"{mins}m {secs % 60}s ago"
+
+    def _set_waiting_room(self, sent_rows: List[dict]):
+        pending = None
+        for row in sent_rows:
+            if str(row.get("status", "")).lower() == "pending":
+                pending = row
+                break
+        if pending:
+            defender = str(pending.get("defender", "Unknown"))
+            wager = int(pending.get("wager_coins", 0) or 0)
+            created_at = str(pending.get("created_at", "") or "")
+            self.waiting_status.configure(text=f"Waiting on {defender} to respond...", text_color=AMBER)
+            self.waiting_meta.configure(text=f"Wager {wager:,}c • sent {self._human_wait(created_at)}")
+            self._pending_local_challenge = None
+            return
+        if isinstance(self._pending_local_challenge, dict):
+            target = str(self._pending_local_challenge.get("target", "Unknown"))
+            wager = int(self._pending_local_challenge.get("wager", 0) or 0)
+            sent_epoch = float(self._pending_local_challenge.get("sent_ts", time.time()) or time.time())
+            secs = max(0, int(time.time() - sent_epoch))
+            self.waiting_status.configure(text=f"Waiting on {target} to respond...", text_color=AMBER)
+            self.waiting_meta.configure(text=f"Wager {wager:,}c • sent {secs}s ago (syncing...)")
+            return
+        self.waiting_status.configure(text="No active outgoing battle request.", text_color=MUTED)
+        self.waiting_meta.configure(text="Send a challenge to enter the waiting room.")
+
+    def _toast(self, title: str, body: str, color: str = ACCENT):
+        try:
+            toast = ctk.CTkToplevel(self)
+            toast.overrideredirect(True)
+            toast.attributes("-topmost", True)
+            w, h = 330, 96
+            x = self.winfo_rootx() + self.winfo_width() - w - 24
+            y = self.winfo_rooty() + 72
+            toast.geometry(f"{w}x{h}+{max(20, x)}+{max(20, y)}")
+            box = ctk.CTkFrame(toast, fg_color="#0f172a", corner_radius=12, border_width=1, border_color=color)
+            box.pack(fill="both", expand=True)
+            ctk.CTkLabel(box, text=title, text_color="#e2e8f0", font=("Segoe UI", 13, "bold")).pack(anchor="w", padx=10, pady=(10, 2))
+            ctk.CTkLabel(box, text=body, text_color="#cbd5e1", justify="left", wraplength=300).pack(anchor="w", padx=10, pady=(0, 8))
+            self.after(3600, lambda: toast.destroy() if toast.winfo_exists() else None)
+        except Exception:
+            pass
+
+    def _apply_incoming_notifications(self, incoming_rows: List[dict], from_background_poll: bool = False):
+        incoming_ids = {int(r.get("id", 0) or 0) for r in incoming_rows if int(r.get("id", 0) or 0) > 0}
+        self.lbl_incoming_badge.configure(
+            text=f"{len(incoming_ids)} incoming",
+            text_color=RED if incoming_ids else MUTED,
+            fg_color="#fee2e2" if incoming_ids else "#f1f5f9",
+        )
+        if not self._incoming_bootstrapped:
+            self._incoming_req_ids_seen = set(incoming_ids)
+            self._incoming_bootstrapped = True
+            return
+        new_ids = [rid for rid in incoming_ids if rid not in self._incoming_req_ids_seen]
+        self._incoming_req_ids_seen = set(incoming_ids)
+        if not new_ids:
+            return
+        latest = None
+        for row in incoming_rows:
+            if int(row.get("id", 0) or 0) in new_ids:
+                latest = row
+                break
+        challenger = str((latest or {}).get("challenger", "Unknown"))
+        wager = int((latest or {}).get("wager_coins", 0) or 0)
+        self.bell()
+        self._toast("Battle Request Received", f"{challenger} challenged you for {wager:,} coins.", RED)
+        if from_background_poll and self.tabs.get() != "⚔ PvP":
+            self.pvp_msg.configure(text=f"New challenge from {challenger}! Open PvP tab.", text_color=RED)
+
+    def _poll_battle_notifications(self):
+        if not self.online_enabled or not self.username:
+            return
+        if self._notify_poll_inflight:
+            return
+        now = time.time()
+        if now < self._next_notify_poll_at:
+            return
+        self._notify_poll_inflight = True
+        self._next_notify_poll_at = now + NOTIFY_POLL_SEC
+        self.bus.run(lambda: self.api.rpc("get_pending_requests", self.username), self._poll_battle_notifications_done)
+
+    def _poll_battle_notifications_done(self, ok: bool, rows):
+        self._notify_poll_inflight = False
+        if not isinstance(rows, list):
+            return
+        self._apply_incoming_notifications(rows, from_background_poll=True)
 
     def _set_battle_output(self, summary: str, lines: List[str], won: Optional[bool] = None):
         if hasattr(self, "pvp_summary"):
@@ -1515,6 +1640,8 @@ class LulsRNG2(ctk.CTk):
         friend_out = payload.get("friend_out", [])
         trade_in = payload.get("trade_in", [])
         trade_out = payload.get("trade_out", [])
+        self._apply_incoming_notifications(incoming, from_background_poll=False)
+        self._set_waiting_room(sent)
 
         if not incoming:
             ctk.CTkLabel(self.pvp_inbox, text="No pending battle requests.", text_color=MUTED).pack(pady=12)
@@ -1665,6 +1792,17 @@ class LulsRNG2(ctk.CTk):
         ok, msg = res
         self.pvp_msg.configure(text=str(msg), text_color=GREEN if ok else RED)
         if ok:
+            try:
+                wager_now = int((self.pvp_wager.get() or "0").strip() or 0)
+            except Exception:
+                wager_now = 0
+            self._pending_local_challenge = {
+                "target": self.pvp_target.get().strip(),
+                "wager": wager_now,
+                "sent_ts": time.time(),
+            }
+            self.waiting_status.configure(text=f"Waiting on {self._pending_local_challenge['target']} to respond...", text_color=AMBER)
+            self.waiting_meta.configure(text=f"Wager {self._pending_local_challenge['wager']:,}c • sent just now")
             self._refresh_pvp()
 
     def _send_friend_request(self):
@@ -1826,6 +1964,7 @@ class LulsRNG2(ctk.CTk):
         self._set_battle_output(summary, lines, won=won)
 
         self.pvp_msg.configure(text="Battle resolved on cloud and synced.", text_color=GREEN)
+        self._pending_local_challenge = None
         self.engine.save_local()
         self._refresh_all()
         self._refresh_pvp()
@@ -1894,6 +2033,7 @@ class LulsRNG2(ctk.CTk):
             return
         try:
             if self.online_enabled:
+                self._poll_battle_notifications()
                 tab = self.tabs.get()
                 if tab == "⚔ PvP":
                     self._refresh_pvp()
