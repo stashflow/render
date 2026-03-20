@@ -26,7 +26,9 @@ import customtkinter as ctk
 import tkinter as tk
 from tkinter import messagebox
 import random, json, os, time, math, hashlib, threading
+import ssl
 import atexit
+import traceback
 from datetime import date, datetime
 from dataclasses import dataclass, field, asdict
 from typing import Optional, List, Dict
@@ -34,6 +36,14 @@ from collections import deque
 from urllib.parse import urlparse, urlunparse
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
+
+try:
+    import certifi
+except Exception:
+    certifi = None
+
+IS_WINDOWS = sys.platform.startswith("win")
+SIMPLE_UI = True
 
 try:
     import psycopg2
@@ -60,6 +70,34 @@ GAME_TITLE = "LUL'S RNG"
 ONLINE_CFG_FILE = os.path.join(os.path.dirname(__file__), "online_client_config.json")
 DEFAULT_API_BASE = "https://render-47ff.onrender.com"
 DEFAULT_API_TOKEN = "04ea193ec0537156f012b0f3a82f86a8"
+ERROR_LOG = os.path.join(os.path.dirname(__file__), "lulsrng_error.log")
+
+
+def _log_exception(prefix: str, exc: BaseException):
+    try:
+        ts = datetime.now().isoformat(timespec="seconds")
+        text = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+        with open(ERROR_LOG, "a", encoding="utf-8") as f:
+            f.write(f"\n[{ts}] {prefix}\n{text}\n")
+    except Exception:
+        pass
+
+
+def _trace(msg: str):
+    """Startup/runtime trace to console + log file for Windows debugging."""
+    try:
+        line = f"[INIT] {msg}"
+        print(line, flush=True)
+        ts = datetime.now().isoformat(timespec="seconds")
+        with open(ERROR_LOG, "a", encoding="utf-8") as f:
+            f.write(f"[{ts}] {line}\n")
+    except Exception:
+        pass
+
+
+def _trace_exc(prefix: str, exc: BaseException):
+    _trace(f"{prefix}: {exc}")
+    _log_exception(prefix, exc)
 
 
 def load_online_api_config():
@@ -135,6 +173,16 @@ ENDGAME_RIFTS = [
 ]
 
 UPDATES_LOG = [
+    {
+        "version": "1.2.0",
+        "date": "March 16, 2026",
+        "title": "Windows Stability Hotfix",
+        "highlights": [
+            "Hardened API fallback behavior for post-login refresh flows",
+            "Prevents UI crashes when online API is slow/unavailable after login",
+            "Improved safe defaults for friends, PvP inbox, and leaderboard polling"
+        ]
+    },
     {
         "version": "1.1.1",
         "date": "March 16, 2026",
@@ -257,12 +305,14 @@ TAB_UNLOCK_LEVELS = {
     "⚔️ Arena": UNLOCKS["arena"],
     "⚔ PvP": UNLOCKS["pvp"],
     "🌍 Online": UNLOCKS["pvp"],
+    "🤝 Friends": 1,
     "🏆 Leaderboard": UNLOCKS["pvp"],
     "⚗️ Craft": UNLOCKS["craft"],
     "💀 Boss": UNLOCKS["boss"],
     "♻️ Rebirth": UNLOCKS["rebirth"],
     "🌌 Endgame": 45,
 }
+ALWAYS_UNLOCKED_TABS = {"🤝 Friends", "🌍 Online", "⚔ PvP"}
 PITY_EPIC = 20
 PITY_LEG  = 40
 REBIRTH_UPGRADES = [
@@ -818,9 +868,33 @@ class HttpDatabase:
         self.token = token or ""
         self.conn = None
         self.last_error = ""
+        self._ssl_context = self._build_ssl_context()
+        self._tls_unverified = False
         self._next_reconnect_at = 0.0
         self._reconnect_backoff = 3.0
         self.reconnect_if_needed(force=True)
+
+    def _build_ssl_context(self):
+        try:
+            if certifi:
+                return ssl.create_default_context(cafile=certifi.where())
+        except Exception:
+            pass
+        return ssl.create_default_context()
+
+    def _open_url(self, req: Request, timeout: int):
+        try:
+            return urlopen(req, timeout=timeout, context=self._ssl_context)
+        except Exception as e:
+            msg = str(e)
+            cert_fail = ("CERTIFICATE_VERIFY_FAILED" in msg) or ("certificate verify failed" in msg.lower())
+            if cert_fail and not self._tls_unverified:
+                # School networks often MITM TLS with local cert roots Python doesn't trust.
+                self._ssl_context = ssl._create_unverified_context()
+                self._tls_unverified = True
+                _trace("HTTP API TLS verify failed; switched to insecure TLS fallback")
+                return urlopen(req, timeout=timeout, context=self._ssl_context)
+            raise
 
     def _encode(self, value):
         if isinstance(value, PlayerState):
@@ -860,7 +934,7 @@ class HttpDatabase:
             method="POST",
         )
         try:
-            with urlopen(req, timeout=12) as resp:
+            with self._open_url(req, timeout=12) as resp:
                 raw = resp.read().decode("utf-8")
                 body = json.loads(raw or "{}")
                 if not body.get("ok"):
@@ -892,10 +966,10 @@ class HttpDatabase:
             method="GET",
         )
         try:
-            with urlopen(req, timeout=8) as resp:
+            with self._open_url(req, timeout=8) as resp:
                 if resp.status == 200:
                     self.conn = True
-                    self.last_error = ""
+                    self.last_error = "TLS fallback active (unverified)" if self._tls_unverified else ""
                     self._reconnect_backoff = 3.0
                     self._next_reconnect_at = 0.0
                     return True
@@ -906,9 +980,32 @@ class HttpDatabase:
         self._reconnect_backoff = min(45.0, self._reconnect_backoff * 1.8)
         return False
 
+    def _fallback_for(self, method_name: str):
+        list_methods = {
+            "get_leaderboard", "get_recent_rolls", "get_online_players",
+            "get_pending_requests", "get_sent_requests",
+            "get_incoming_trades", "get_outgoing_trades",
+            "get_incoming_friend_requests", "get_outgoing_friend_requests", "get_friends",
+        }
+        bool_methods = {
+            "save_player", "decline_request", "resolve_battle",
+            "decline_trade", "resolve_trade",
+            "accept_friend_request", "decline_friend_request", "are_friends",
+            "post_roll", "claim_boss_race",
+        }
+        tuple_methods = {"send_battle_request", "send_friend_request", "send_trade_request"}
+        if method_name in list_methods:
+            return []
+        if method_name in bool_methods:
+            return False
+        if method_name in tuple_methods:
+            return False, "Online unavailable"
+        return None
+
     def __getattr__(self, name):
         def _call(*args, **kwargs):
-            return self._rpc(name, *args, **kwargs)
+            r = self._rpc(name, *args, **kwargs)
+            return self._fallback_for(name) if r is None else r
         return _call
 
     # Keep behavior compatible with local Database callers.
@@ -1029,8 +1126,31 @@ class GameEngine:
                     self.state = PlayerState.from_dict(json.load(f))
             except:
                 self.state = PlayerState()
+        self._sanitize_state()
+
+    def _sanitize_state(self):
+        s = self.state
+        # Prevent corrupted/negative values from destabilizing gameplay balance.
+        s.level = max(1, int(s.level or 1))
+        s.xp = max(0, int(s.xp or 0))
+        s.coins = max(0, int(s.coins or 0))
+        s.shards = max(0, int(s.shards or 0))
+        s.boss_tokens = max(0, int(s.boss_tokens or 0))
+        s.rebirths = max(0, int(s.rebirths or 0))
+        s.total_rolls = max(0, int(s.total_rolls or 0))
+        s.pity_counter = max(0, int(s.pity_counter or 0))
+        s.lucky_rolls = max(0, int(s.lucky_rolls or 0))
+        s.lucky_rolls_remaining = max(0, int(s.lucky_rolls_remaining or 0))
+        s.inventory = {k: max(0, int(v or 0)) for k, v in (s.inventory or {}).items() if int(v or 0) > 0}
+        if s.highest_rarity_pulled not in RARITIES:
+            s.highest_rarity_pulled = "Common"
+        if not isinstance(s.collection, list):
+            s.collection = []
+        if not isinstance(s.achievements, list):
+            s.achievements = []
 
     def save_game(self):
+        self._sanitize_state()
         # Local fallback always
         try:
             with open(SAVE_FILE, "w") as f:
@@ -1422,9 +1542,15 @@ GOLD2   = "#f59e0b"; RED     = "#fb7185"; GREEN   = "#4ade80"
 BLUE    = "#60a5fa"; PURPLE  = "#8f46ff"; ACCENT  = "#6c7cff"
 ACCENT2 = "#5c6ef7"; TOP_BTN = "#121d34"
 
-_FONT = "Orbitron" if sys.platform != "darwin" else "Orbitron"
-_BODY = "Inter" if sys.platform != "darwin" else "Inter"
-_MONO = "JetBrains Mono" if sys.platform != "darwin" else "JetBrains Mono"
+if sys.platform.startswith("win"):
+    # Windows-safe font stack to avoid layout glitches/crashes on missing custom fonts.
+    _FONT = "Segoe UI"
+    _BODY = "Segoe UI"
+    _MONO = "Consolas"
+else:
+    _FONT = "Orbitron"
+    _BODY = "Inter"
+    _MONO = "JetBrains Mono"
 F_HERO  = (_FONT, 36, "bold"); F_TITLE = (_FONT, 22, "bold")
 F_HEAD  = (_BODY, 15, "bold"); F_BODY  = (_BODY, 13)
 F_SMALL = (_FONT, 11);         F_LABEL = (_FONT, 10)
@@ -1768,13 +1894,16 @@ class LoginScreen(ctk.CTkToplevel):
         return self.user_entry.get().strip(), self.pass_entry.get()
 
     def _login(self):
+        _trace("LoginScreen: login pressed")
         u, p = self._get_creds()
         if not u or not p: self.err_lbl.configure(text="Enter username and password"); return
         ok, result = self.db.login(u, p)
         if ok:
+            _trace("LoginScreen: login success")
             self.on_success(u, result)
             self.destroy()
         else:
+            _trace(f"LoginScreen: login failed -> {result}")
             self.err_lbl.configure(text=str(result))
 
     def _do_register(self):
@@ -1788,6 +1917,7 @@ class LoginScreen(ctk.CTkToplevel):
             self.err_lbl.configure(text=msg)
 
     def _offline(self):
+        _trace("LoginScreen: offline selected")
         self.on_success("", None)
         self.destroy()
 
@@ -1800,6 +1930,7 @@ class LulsRNG(ctk.CTk):
         super().__init__()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.withdraw()   # hide until login done
+        self._login_completed = False
         api_base, api_token = load_online_api_config()
         if api_base:
             self.db = HttpDatabase(api_base, api_token)
@@ -1822,6 +1953,12 @@ class LulsRNG(ctk.CTk):
         self._sound_ready = False
         self._sounds = {}
         self._is_closing = False
+        self._online_busy = False
+        self._online_tick_enabled = False
+        self._offline_mode = False
+        self._stable_mode = True if SIMPLE_UI else IS_WINDOWS
+        self._tab_builders = {}
+        self._built_tabs = set()
 
         self.title(f"⚡  {GAME_TITLE}")
         self.geometry("1340x880"); self.minsize(1100, 740)
@@ -1830,23 +1967,153 @@ class LulsRNG(ctk.CTk):
 
         # Show login
         login = LoginScreen(self.db, self._on_login)
-        login.protocol("WM_DELETE_WINDOW", self.destroy)
+        def _login_closed():
+            # Only close the root app if user closes login before successful auth.
+            try:
+                login.destroy()
+            except Exception:
+                pass
+            if not self._login_completed:
+                self.destroy()
+        login.protocol("WM_DELETE_WINDOW", _login_closed)
         self.wait_window(login)
 
+    def report_callback_exception(self, exc, val, tb):
+        """Catch Tk callback exceptions so Windows doesn't fail silently."""
+        try:
+            text = "".join(traceback.format_exception(exc, val, tb))
+            with open(ERROR_LOG, "a", encoding="utf-8") as f:
+                f.write(f"\n[{datetime.now().isoformat(timespec='seconds')}] Tk callback exception\n{text}\n")
+            _trace(f"Tk callback exception: {val}")
+        except Exception:
+            pass
+        try:
+            messagebox.showerror("Runtime Error", f"An internal error occurred.\n\nDetails were saved to:\n{ERROR_LOG}")
+        except Exception:
+            pass
+
     def _on_login(self, username: str, state: Optional[PlayerState]):
+        self._login_completed = True
+        _trace(f"_on_login start (username={'<offline>' if not username else username})")
         self.username = username
+        self._offline_mode = (not username)
         self.engine = GameEngine(self.db, username)
+        _trace("GameEngine loaded")
         if state:
             self.engine.state = state
+            _trace("Cloud state applied")
         self._init_sound()
+        _trace("Sound initialized")
         self.deiconify()
-        self._build_ui()
-        self._refresh_all()
+        _trace("Window deiconified")
+        try:
+            _trace("Building UI")
+            self._build_ui()
+            _trace("UI built; refreshing core startup")
+            self._refresh_core_startup()
+            _trace("Core startup refresh complete")
+        except Exception as e:
+            # Never hard-crash during startup on Windows; fall back to safe retry.
+            _trace(f"Startup pass 1 failed: {e}")
+            try:
+                _trace("Retrying UI build")
+                self._build_ui()
+                _trace("Retry build complete; refreshing core startup")
+                self._refresh_core_startup()
+                _trace("Core startup refresh complete on retry")
+            except Exception as e2:
+                _trace(f"Startup retry failed: {e2}")
+                messagebox.showerror(
+                    "Startup Error",
+                    f"UI initialization failed.\n\n{e2}\n\nTry running offline mode."
+                )
+                raise
         atexit.register(self._final_sync)
-        self.after(800,  self._check_daily_launch)
-        self.after(16,   self._anim_tick)
-        self.after(1000, self._slow_tick)
-        self.after(5000, self._online_tick)  # poll online every 5s
+        _trace("Registered final sync")
+        if not self._stable_mode:
+            self.after(800,  self._check_daily_launch)
+            _trace("Scheduled daily check")
+            self.after(16, self._anim_tick)
+            _trace("Scheduled animation loop")
+            self.after(1000, self._slow_tick)
+            _trace("Scheduled slow tick")
+        else:
+            _trace("Stable mode: skipped auto daily + anim + slow tick")
+        if not self._offline_mode:
+            if not self._stable_mode:
+                self.after(1200, self._deferred_online_refresh)
+                self._online_tick_enabled = True
+                self.after(7000, self._online_tick)  # poll online every 7s
+                _trace("Scheduled online refresh/polling")
+            else:
+                _trace("Stable mode: no background online startup work (manual refresh only)")
+        _trace("_on_login complete")
+
+    def _refresh_core_startup(self):
+        _trace("Core startup refresh begin")
+        if self._stable_mode:
+            steps = [
+                ("top_bar", self._refresh_top_bar),
+                ("roll_info", self._refresh_roll_info),
+                ("live_status", self._tick_live_status),
+            ]
+            if "🎒 Inventory" in self._built_tabs:
+                steps.append(("inventory", self._refresh_inventory))
+            if "⚔️ Arena" in self._built_tabs:
+                steps.append(("arena", self._refresh_arena))
+            if "💀 Boss" in self._built_tabs:
+                steps.append(("boss", self._refresh_boss))
+            if "⚗️ Craft" in self._built_tabs:
+                steps.append(("craft", self._refresh_craft))
+            if "📖 Collection" in self._built_tabs:
+                steps.append(("collection", self._refresh_collection))
+            if "📊 Stats" in self._built_tabs:
+                steps.append(("stats", self._refresh_stats))
+            if "♻️ Rebirth" in self._built_tabs:
+                steps.append(("rebirth", self._refresh_rebirth))
+            if "📰 Updates" in self._built_tabs and hasattr(self, "upd_scroll"):
+                steps.append(("updates", self._render_updates))
+        else:
+            steps = [
+                ("top_bar", self._refresh_top_bar),
+                ("roll_info", self._refresh_roll_info),
+                ("inventory", self._refresh_inventory),
+                ("arena", self._refresh_arena),
+                ("boss", self._refresh_boss),
+                ("craft", self._refresh_craft),
+                ("collection", self._refresh_collection),
+                ("stats", self._refresh_stats),
+                ("rebirth", self._refresh_rebirth),
+                ("endgame", self._refresh_endgame),
+                ("updates", self._render_updates if hasattr(self, "upd_scroll") else None),
+                ("pvp_titles", self._refresh_pvp_titles if hasattr(self, "pvp_bt_lbl") else None),
+                ("live_status", self._tick_live_status),
+            ]
+        for name, step in steps:
+            if not step:
+                continue
+            try:
+                _trace(f"Refresh step: {name}")
+                step()
+                _trace(f"Refresh done: {name}")
+            except Exception as e:
+                _trace(f"Refresh failed: {name} -> {e}")
+        _trace("Core startup refresh end")
+
+    def _deferred_online_refresh(self):
+        if self._is_closing or self._offline_mode:
+            return
+        _trace("Deferred online refresh begin")
+        steps = [self._refresh_online] if self._stable_mode else [
+            self._refresh_leaderboard, self._refresh_online, self._refresh_pvp, self._refresh_roll_friends_async
+        ]
+        for step in steps:
+            try:
+                step()
+            except Exception as e:
+                print(f"[NET] deferred refresh failed: {e}")
+                _trace(f"Deferred refresh step failed: {e}")
+        _trace("Deferred online refresh end")
 
     def _ui_after(self, delay_ms: int, fn):
         """Thread-safe UI scheduling; ignores callbacks when app is closing/destroyed."""
@@ -1854,32 +2121,60 @@ class LulsRNG(ctk.CTk):
             return
         try:
             if self.winfo_exists():
-                self.after(delay_ms, fn)
+                _trace(f"Schedule callback in {delay_ms}ms: {getattr(fn, '__name__', type(fn).__name__)}")
+                self.after(delay_ms, lambda: self._safe_ui_call(fn))
         except (RuntimeError, tk.TclError):
             pass
+
+    def _safe_ui_call(self, fn):
+        if self._is_closing:
+            return
+        try:
+            if self.winfo_exists():
+                _trace(f"Run callback: {getattr(fn, '__name__', type(fn).__name__)}")
+                fn()
+        except Exception as e:
+            # Keep UI alive even if one async refresh callback fails.
+            _trace_exc("Ignored callback error", e)
 
     # ── animation loops ───────────────────────────────────────────────────────
 
     def _anim_tick(self):
-        if self._starfield:
-            self._starfield.tick()
-        self._particle_system.tick()
-        if hasattr(self, "_ring_angle") and self._rolling:
-            self._ring_angle = (self._ring_angle + 6) % 360
-            self._draw_ring(self._ring_angle)
-        if hasattr(self, "roll_glow"):
-            self.roll_glow.tick()
-        self.after(16, self._anim_tick)
+        try:
+            # Simplified visual loop for maximum stability.
+            if not self._stable_mode:
+                self._particle_system.tick()
+            if hasattr(self, "_ring_angle") and self._rolling:
+                self._ring_angle = (self._ring_angle + 6) % 360
+                self._draw_ring(self._ring_angle)
+            if hasattr(self, "roll_glow") and (not self._stable_mode):
+                self.roll_glow.tick()
+        except Exception as e:
+            print(f"[UI] anim tick recovered: {e}")
+        self.after(33 if self._stable_mode else 16, self._anim_tick)
 
     def _slow_tick(self):
-        self._refresh_arena_cds()
-        self._refresh_boss_cds()
-        self._refresh_endgame_cds()
-        self._tick_live_status()
+        try:
+            self._refresh_arena_cds()
+            self._refresh_boss_cds()
+            self._refresh_endgame_cds()
+            self._tick_live_status()
+        except Exception as e:
+            print(f"[UI] slow tick recovered: {e}")
         self.after(1000, self._slow_tick)
 
     def _online_tick(self):
         """Poll DB for online players, pending requests, global feed."""
+        if self._is_closing or self._offline_mode:
+            return
+        if self._stable_mode and not self._online_tick_enabled:
+            return
+        _trace("online_tick begin")
+        if self._online_busy:
+            _trace("online_tick skipped: busy")
+            self.after(5000, self._online_tick)
+            return
+        self._online_busy = True
         def _bg():
             try:
                 self.db.reconnect_if_needed()
@@ -1890,14 +2185,21 @@ class LulsRNG(ctk.CTk):
                 self._cached_feed   = self.db.get_recent_rolls()
                 self._cached_inbox  = self.db.get_pending_requests(self.username) if self.username else []
                 self._ui_after(0, self._render_online)
-            except:
-                pass
+            except Exception as e:
+                print(f"[NET] online tick recovered: {e}")
+                _trace_exc("online_tick worker error", e)
+            finally:
+                self._online_busy = False
+                _trace("online_tick worker end")
         threading.Thread(target=_bg, daemon=True).start()
         self.after(5000, self._online_tick)
 
     # ── sound hooks ───────────────────────────────────────────────────────────
 
     def _init_sound(self):
+        if self._stable_mode:
+            self._sound_ready = False
+            return
         if not pygame:
             return
         try:
@@ -1941,6 +2243,9 @@ class LulsRNG(ctk.CTk):
     # ── level-up flash ────────────────────────────────────────────────────────
 
     def _show_levelup(self, new_level):
+        if self._stable_mode:
+            self._notify(f"Level Up! Level {new_level}", GREEN)
+            return
         try:
             flash = tk.Frame(self, bg="#6366f1")
             flash.place(x=0, y=0, relwidth=1, relheight=1)
@@ -1965,6 +2270,7 @@ class LulsRNG(ctk.CTk):
     #  BUILD UI
     # ══════════════════════════════════════════════════════════════════════════
     def _build_ui(self):
+        _trace("_build_ui begin")
         # Top bar
         top = ctk.CTkFrame(self, fg_color=CARD, height=68, corner_radius=0, border_width=1, border_color=BORDER2)
         top.pack(fill="x"); top.pack_propagate(False)
@@ -2018,35 +2324,140 @@ class LulsRNG(ctk.CTk):
         except Exception:
             pass
 
-        tabs = ["🎲 Roll","🎒 Inventory","⚔️ Arena","💀 Boss",
-                "🛒 Shop","⚗️ Craft","📖 Collection",
-                "🌍 Online","🏆 Leaderboard","⚔ PvP","📊 Stats","♻️ Rebirth","🌌 Endgame","📰 Updates"]
+        if self._stable_mode:
+            # Windows-first rewrite mode: lazy build tabs to prevent startup crashes.
+            tabs = ["🎲 Roll", "🎒 Inventory", "⚔️ Arena", "💀 Boss",
+                    "🛒 Shop", "⚗️ Craft", "📖 Collection",
+                    "📊 Stats", "♻️ Rebirth", "🌍 Online", "⚔ PvP", "🏆 Leaderboard", "📰 Updates", "🤝 Friends"]
+        else:
+            tabs = ["🎲 Roll","🎒 Inventory","⚔️ Arena","💀 Boss",
+                    "🛒 Shop","⚗️ Craft","📖 Collection",
+                    "🌍 Online","⚔ PvP","🏆 Leaderboard","📊 Stats","♻️ Rebirth","🌌 Endgame","📰 Updates","🤝 Friends"]
         for t in tabs: self.tabs.add(t)
 
-        self._build_roll_tab()
-        self._build_inv_tab()
-        self._build_arena_tab()
-        self._build_boss_tab()
-        self._build_shop_tab()
-        self._build_craft_tab()
-        self._build_collection_tab()
-        self._build_online_tab()
-        self._build_leaderboard_tab()
-        self._build_pvp_tab()
-        self._build_stats_tab()
-        self._build_rebirth_tab()
-        self._build_endgame_tab()
-        self._build_updates_tab()
+        builders = [
+            ("🎲 Roll", self._build_roll_tab),
+            ("🎒 Inventory", self._build_inv_tab),
+            ("⚔️ Arena", self._build_arena_tab),
+            ("💀 Boss", self._build_boss_tab),
+            ("🛒 Shop", self._build_shop_tab),
+            ("⚗️ Craft", self._build_craft_tab),
+            ("📖 Collection", self._build_collection_tab),
+            ("📊 Stats", self._build_stats_tab),
+            ("♻️ Rebirth", self._build_rebirth_tab),
+            ("🌍 Online", self._build_online_tab),
+            ("⚔ PvP", self._build_pvp_tab),
+            ("🤝 Friends", self._build_friends_tab),
+            ("🏆 Leaderboard", self._build_leaderboard_tab),
+            ("📰 Updates", self._build_updates_tab),
+        ]
+        if not self._stable_mode:
+            builders += [
+                ("🌌 Endgame", self._build_endgame_tab),
+            ]
+
+        self._tab_builders = {name: fn for name, fn in builders}
+        self._built_tabs = set()
+
+        if self._stable_mode:
+            # Build only Roll tab initially for maximum startup reliability.
+            self._build_tab_if_needed("🎲 Roll")
+        else:
+            for tab_name, fn in builders:
+                try:
+                    _trace(f"Building tab: {tab_name}")
+                    fn()
+                    self._built_tabs.add(tab_name)
+                    _trace(f"Built tab: {tab_name}")
+                except Exception as e:
+                    _trace(f"Tab build failed {tab_name}: {e}")
+                    try:
+                        t = self.tabs.tab(tab_name)
+                        t.configure(fg_color=BG)
+                        lbl(t, "This panel failed to initialize on this device.", color=RED, font=F_SMALL).pack(pady=18)
+                        lbl(t, str(e), color=FG2, font=F_LABEL, wraplength=700).pack(pady=4)
+                    except Exception:
+                        pass
         self._last_unlock_level_checked = self.engine.state.level if self.engine else 1
         self._update_tab_access()
+        _trace("_build_ui end")
+
+    def _build_tab_if_needed(self, tab_name: str):
+        if tab_name in self._built_tabs:
+            return
+        fn = self._tab_builders.get(tab_name)
+        if not fn:
+            return
+        try:
+            _trace(f"Lazy build tab: {tab_name}")
+            fn()
+            self._built_tabs.add(tab_name)
+            _trace(f"Lazy built tab: {tab_name}")
+        except Exception as e:
+            _trace(f"Lazy tab build failed {tab_name}: {e}")
+            try:
+                t = self.tabs.tab(tab_name)
+                t.configure(fg_color=BG)
+                lbl(t, "This panel failed to initialize on this device.", color=RED, font=F_SMALL).pack(pady=18)
+                lbl(t, str(e), color=FG2, font=F_LABEL, wraplength=700).pack(pady=4)
+            except Exception:
+                pass
 
     # ══════════════════════════════════════════════════════════════════════════
     #  ROLL TAB
     # ══════════════════════════════════════════════════════════════════════════
     def _build_roll_tab(self):
         tab = self.tabs.tab("🎲 Roll"); tab.configure(fg_color=BG)
-        self._sf_cv = tk.Canvas(tab, bg=BG, highlightthickness=0)
-        self._sf_cv.place(x=0, y=0, relwidth=1, relheight=1)
+        if self._stable_mode:
+            center = ctk.CTkFrame(tab, fg_color="transparent")
+            center.pack(fill="both", expand=True, padx=16, pady=16)
+
+            lbl(center, "ROLL FOR YOUR TITLE", font=(_FONT, 13, "bold"), color=FG2).pack(pady=(4, 10))
+            card = card_frame(center, width=620, height=220)
+            card.pack(pady=6)
+            card.pack_propagate(False)
+
+            self.roll_title_lbl = lbl(card, "???", font=(_FONT, 32, "bold"), color=FG2)
+            self.roll_title_lbl.pack(pady=(38, 8))
+            self.roll_rarity_lbl = lbl(card, "◆ COMMON ◆", font=(_BODY, 16, "bold"), color=FG2)
+            self.roll_rarity_lbl.pack(pady=(0, 8))
+            self.roll_reward_lbl = lbl(card, "", font=F_MONO, color=GOLD)
+            self.roll_reward_lbl.pack(pady=(0, 6))
+
+            brow = ctk.CTkFrame(center, fg_color="transparent"); brow.pack(pady=14)
+            self.roll_btn = pill_btn(brow, "ROLL", self._do_roll,
+                                      font=(_FONT, 16, "bold"), w=200, h=52, fg=ACCENT, hover=ACCENT2)
+            self.roll_btn.pack(side="left", padx=8)
+            self.lucky_btn = pill_btn(brow, "Lucky", self._activate_lucky,
+                                       fg="#7c2d12", hover="#9a3412", w=120, h=52)
+            self.lucky_btn.pack(side="left", padx=6)
+            self.auto_roll_switch = ctk.CTkSwitch(
+                brow, text="Auto", width=72, height=28, command=self._toggle_auto_roll,
+                progress_color=ACCENT, button_color=FG, button_hover_color="#cbd5e1", state="disabled")
+            self.auto_roll_switch.pack(side="left", padx=8)
+            self.auto_target_menu = ctk.CTkOptionMenu(
+                brow, values=["Epic","Legendary","Mythic","Divine","Transcendent"],
+                width=136, height=34, command=self._set_auto_target,
+                fg_color=CARD2, button_color=ACCENT2, button_hover_color=ACCENT)
+            self.auto_target_menu.pack(side="left", padx=4)
+
+            irow = ctk.CTkFrame(center, fg_color="transparent"); irow.pack(pady=2)
+            self.lbl_pity  = lbl(irow, "", color=FG2, font=F_LABEL); self.lbl_pity.pack(side="left", padx=14)
+            self.lbl_rolls = lbl(irow, "", color=FG2, font=F_LABEL); self.lbl_rolls.pack(side="left", padx=14)
+            self.lbl_auto  = lbl(irow, "", color=FG2, font=F_LABEL); self.lbl_auto.pack(side="left", padx=14)
+
+            lbl(center, "RECENT PULLS", font=F_LABEL, color=FG2).pack(pady=(14, 4))
+            self.recent_list = ctk.CTkScrollableFrame(center, fg_color="transparent", width=620, height=140)
+            self.recent_list.pack(fill="x", padx=10, pady=(0, 8))
+            ghost_btn(tab, "Friends", lambda: self.tabs.set("🤝 Friends"), color=BLUE, w=120, h=34).place(
+                relx=0.985, rely=0.985, anchor="se")
+            return
+
+        if (not self._stable_mode) and (not SIMPLE_UI):
+            self._sf_cv = tk.Canvas(tab, bg=BG, highlightthickness=0)
+            self._sf_cv.place(x=0, y=0, relwidth=1, relheight=1)
+        else:
+            self._sf_cv = None
 
         center = ctk.CTkFrame(tab, fg_color="transparent")
         center.place(relx=0.5, rely=0.5, anchor="center")
@@ -2071,14 +2482,15 @@ class LulsRNG(ctk.CTk):
         self._ring_arc  = self.roll_cv.create_arc(
             14, 14, CW-14, CH-14, start=0, extent=64, style=tk.ARC, outline=ACCENT, width=3)
 
-        def _init_sf(e=None):
-            w = tab.winfo_width() or 1300; h = tab.winfo_height() or 800
-            self._sf_cv.configure(width=w, height=h)
-            if not self._starfield:
-                self._starfield = StarfieldBackground(self._sf_cv, w, h)
-            else:
-                self._starfield.resize(w, h)
-        tab.bind("<Configure>", _init_sf)
+        if (not self._stable_mode) and (not SIMPLE_UI):
+            def _init_sf(e=None):
+                w = tab.winfo_width() or 1300; h = tab.winfo_height() or 800
+                self._sf_cv.configure(width=w, height=h)
+                if not self._starfield:
+                    self._starfield = StarfieldBackground(self._sf_cv, w, h)
+                else:
+                    self._starfield.resize(w, h)
+            tab.bind("<Configure>", _init_sf)
 
         brow = ctk.CTkFrame(center, fg_color="transparent"); brow.pack(pady=18)
         self.roll_btn = pill_btn(brow, "⚡ ROLL", self._do_roll,
@@ -2125,6 +2537,8 @@ class LulsRNG(ctk.CTk):
             "<Configure>",
             lambda e: self.recent_cv.configure(scrollregion=self.recent_cv.bbox("all")))
         self._build_roll_friends_panel(tab)
+        ghost_btn(tab, "Friends", lambda: self.tabs.set("🤝 Friends"), color=BLUE, w=110, h=32).place(
+            relx=0.985, rely=0.985, anchor="se")
 
     def _build_roll_friends_panel(self, roll_tab):
         panel = card_frame(roll_tab, width=300, height=218, border_color=blend_colors(ACCENT, BORDER2, 0.3))
@@ -2181,6 +2595,11 @@ class LulsRNG(ctk.CTk):
             ghost_btn(r2, "Challenge", lambda u=fr: self._open_player_profile(u), color=PURPLE, w=84, h=24).pack(side="right")
 
     def _set_roll_preview(self, title: str, rarity: str, color: str, reward_text: str = ""):
+        if self._stable_mode and hasattr(self, "roll_title_lbl"):
+            self.roll_title_lbl.configure(text=title, text_color=color)
+            self.roll_rarity_lbl.configure(text=f"◆ {rarity.upper()} ◆", text_color=color)
+            self.roll_reward_lbl.configure(text=reward_text or "", text_color=GOLD if rarity != "Common" else FG2)
+            return
         self.roll_glow.set_rarity(rarity)
         self.roll_cv.itemconfigure(self._cv_title, text=title, fill=color)
         self.roll_cv.itemconfigure(self._cv_rarity, text=f"◆ {rarity.upper()} ◆", fill=color)
@@ -2188,15 +2607,50 @@ class LulsRNG(ctk.CTk):
         self.roll_cv.itemconfigure(self._cv_arc_deco, outline=blend_colors(color, ACCENT, 0.35))
 
     def _draw_ring(self, angle):
+        if self._stable_mode:
+            return
         try: self.roll_cv.itemconfigure(self._ring_arc, start=angle, extent=90)
         except: pass
 
     def _do_roll(self):
         if self._rolling: return
+        if self._stable_mode:
+            self._finish_roll_simple()
+            return
         self._rolling = True
         self.roll_btn.configure(state="disabled")
         self.roll_cv.itemconfigure(self._ring_arc, outline=ACCENT)
         self._roll_anim.run()
+
+    def _finish_roll_simple(self):
+        if self._rolling:
+            return
+        self._rolling = True
+        self.roll_btn.configure(state="disabled")
+        lvl_before = self.engine.state.level
+        title, rarity, shards, coins, achs = self.engine.perform_roll()
+        c = rarity_ui_color(rarity)
+        self.roll_title_lbl.configure(text=title, text_color=c)
+        self.roll_rarity_lbl.configure(text=f"◆ {rarity.upper()} ◆", text_color=c)
+        reward_txt = f"+{coins} coins" + (f"   +{shards} shards" if shards else "")
+        self.roll_reward_lbl.configure(text=reward_txt, text_color=GOLD)
+        self._add_recent(title, rarity)
+        self._rolling = False
+        self.roll_btn.configure(state="normal")
+        self._refresh_top_bar(); self._refresh_roll_info()
+        if hasattr(self, "inv_list"):
+            self._refresh_inventory()
+        if hasattr(self, "coll_scroll"):
+            self._refresh_collection()
+        if hasattr(self, "_stats_scroll"):
+            self._refresh_stats()
+        if self.engine.state.level > lvl_before:
+            self._show_levelup(self.engine.state.level)
+            if hasattr(self, "rb_lock_lbl"):
+                self._refresh_rebirth()
+        for a in achs:
+            self._notify(f"🏆  {a['name']}", GOLD)
+        self._auto_roll_post_roll(rarity)
 
     def _finish_roll_reveal(self):
         lvl_before = self.engine.state.level
@@ -2259,6 +2713,8 @@ class LulsRNG(ctk.CTk):
         self._auto_roll_post_roll(rarity)
 
     def _title_glow(self, color: str, step: int, max_step: int):
+        if self._stable_mode:
+            return
         if not self.roll_cv.winfo_exists():
             return
         if step > max_step:
@@ -2270,6 +2726,8 @@ class LulsRNG(ctk.CTk):
         self.after(70, lambda: self._title_glow(color, step + 1, max_step))
 
     def _start_mythic_glow(self):
+        if self._stable_mode:
+            return
         if self._mythic_glow_running:
             return
         self._mythic_glow_running = True
@@ -2291,6 +2749,8 @@ class LulsRNG(ctk.CTk):
         self.after(70, lambda: self._mythic_glow_tick(i + 1))
 
     def _screen_shake(self, intensity=6, step=0):
+        if self._stable_mode:
+            return
         if not self.roll_cv.winfo_exists():
             return
         if step > 10:
@@ -2318,6 +2778,22 @@ class LulsRNG(ctk.CTk):
         self.after(100, lambda: self._pulse_border(color, step+1))
 
     def _add_recent(self, title, rarity):
+        if self._stable_mode and hasattr(self, "recent_list"):
+            c = rarity_ui_color(rarity)
+            self._recent_rolls.insert(0, (title, rarity, c))
+            if len(self._recent_rolls) > 20:
+                self._recent_rolls.pop()
+            for w in self.recent_list.winfo_children():
+                w.destroy()
+            for t, r, col in self._recent_rolls:
+                chip = ctk.CTkFrame(self.recent_list, fg_color=blend_colors(CARD, col, 0.08), corner_radius=14,
+                                    border_width=1, border_color=blend_colors(col, CARD, 0.2))
+                chip.pack(fill="x", pady=2, padx=2)
+                rr = ctk.CTkFrame(chip, fg_color="transparent")
+                rr.pack(fill="x", padx=8, pady=4)
+                lbl(rr, r, color=col, font=F_LABEL).pack(side="left")
+                lbl(rr, t, color=FG, font=F_LABEL).pack(side="left", padx=8)
+            return
         c = rarity_ui_color(rarity)
         self._recent_rolls.insert(0, (title, rarity, c))
         if len(self._recent_rolls) > 20: self._recent_rolls.pop()
@@ -2928,6 +3404,10 @@ class LulsRNG(ctk.CTk):
         hdr = ctk.CTkFrame(tab, fg_color="transparent"); hdr.pack(fill="x", padx=20, pady=(14,6))
         lbl(hdr, "Online Players", font=F_TITLE).pack(side="left")
         ghost_btn(hdr, "↻ Refresh", self._refresh_online, w=110, h=34).pack(side="right")
+        ghost_btn(hdr, "Open Friends", lambda: self.tabs.set("🤝 Friends"), w=130, h=34).pack(side="right", padx=(0, 8))
+        ghost_btn(hdr, "Open PvP", lambda: self.tabs.set("⚔ PvP"), color=RED, w=110, h=34).pack(side="right", padx=(0, 8))
+        self.online_cloud_lbl = lbl(tab, "", color=FG2, font=F_LABEL)
+        self.online_cloud_lbl.pack(anchor="w", padx=20, pady=(0, 4))
 
         self.online_scroll = ctk.CTkScrollableFrame(tab, fg_color="transparent", width=500)
         self.online_scroll.pack(side="left", fill="both", expand=True, padx=(16,8), pady=8)
@@ -2937,24 +3417,49 @@ class LulsRNG(ctk.CTk):
         self.feed_scroll.pack(side="right", fill="both", expand=True, padx=(8,16), pady=8)
 
         self._cached_online = []; self._cached_feed = []
+        self._cached_online_error = ""
 
     def _refresh_online(self):
         def _bg():
+            err = ""
             try:
+                self.db.reconnect_if_needed(force=True)
+                if self.engine and self.username:
+                    self.db.save_player(self.username, self.engine.state)
                 self._cached_online = self.db.get_online_players()
                 self._cached_feed   = self.db.get_recent_rolls()
-            except: pass
+                if not getattr(self.db, "conn", True):
+                    err = getattr(self.db, "last_error", "") or "Cloud unavailable"
+            except Exception as e:
+                err = str(e)
+                _trace(f"refresh_online failed: {e}")
+            self._cached_online_error = err
             self._ui_after(0, self._render_online)
         threading.Thread(target=_bg, daemon=True).start()
 
     def _render_online(self):
+        if not hasattr(self, "online_scroll") or not hasattr(self, "feed_scroll"):
+            return
+        if hasattr(self, "online_cloud_lbl"):
+            if self._cached_online_error:
+                self.online_cloud_lbl.configure(
+                    text=f"Cloud issue: {self._cached_online_error}",
+                    text_color=RED,
+                )
+            else:
+                self.online_cloud_lbl.configure(text="Cloud connected", text_color=GREEN)
         for w in self.online_scroll.winfo_children(): w.destroy()
         rows = getattr(self, "_cached_online", [])
+        if not isinstance(rows, list):
+            rows = []
         if not rows:
             lbl(self.online_scroll, "No players online right now.", color=FG2).pack(pady=20); 
         else:
             for r in rows:
-                un = r["username"]; rar = r.get("rarity","Common") or "Common"
+                if not isinstance(r, dict):
+                    continue
+                un = str(r.get("username", "Unknown"))
+                rar = r.get("rarity","Common") or "Common"
                 lvl = r.get("level","?"); eq  = r.get("equipped_title","")
                 col = RARITIES.get(rar, {}).get("color", FG2)
                 c = card_frame(self.online_scroll); c.pack(fill="x", pady=3, padx=4)
@@ -2966,17 +3471,23 @@ class LulsRNG(ctk.CTk):
                 lbl(cr, f"Lv.{lvl}", color=FG2, font=F_LABEL).pack(side="left", padx=8)
                 lbl(cr, rar, color=col, font=F_LABEL).pack(side="left")
                 if eq: lbl(cr, eq, color=FG2, font=F_LABEL).pack(side="left", padx=8)
-                pill_btn(cr, "View", lambda u=un: self._open_player_profile(u),
-                         fg=CARD2, hover=CARD, w=70, h=28).pack(side="right")
+                pill_btn(cr, "Battle/Trade", lambda u=un: self._open_player_profile(u),
+                         fg=CARD2, hover=CARD, w=120, h=28).pack(side="right")
 
         # Feed
         for w in self.feed_scroll.winfo_children(): w.destroy()
         feed = getattr(self, "_cached_feed", [])
+        if not isinstance(feed, list):
+            feed = []
         if not feed:
             lbl(self.feed_scroll, "No recent pulls.", color=FG2).pack(pady=20)
         else:
             for r in feed:
-                un = r["username"]; title = r["title"]; rar = r["rarity"]
+                if not isinstance(r, dict):
+                    continue
+                un = str(r.get("username", "Unknown"))
+                title = str(r.get("title", "Unknown"))
+                rar = str(r.get("rarity", "Common"))
                 col = RARITIES.get(rar,{}).get("color", FG2)
                 ts  = r.get("rolled_at","")
                 c = ctk.CTkFrame(self.feed_scroll, fg_color=CARD, corner_radius=10, border_width=1, border_color=BORDER)
@@ -2985,6 +3496,97 @@ class LulsRNG(ctk.CTk):
                 lbl(cr, un, color=FG2, font=F_LABEL, width=80, anchor="w").pack(side="left")
                 lbl(cr, title, color=col, font=F_SMALL).pack(side="left", padx=4)
                 lbl(cr, rar, color=col, font=F_LABEL).pack(side="right")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    #  FRIENDS TAB
+    # ══════════════════════════════════════════════════════════════════════════
+    def _build_friends_tab(self):
+        tab = self.tabs.tab("🤝 Friends"); tab.configure(fg_color=BG)
+        hdr = ctk.CTkFrame(tab, fg_color="transparent"); hdr.pack(fill="x", padx=20, pady=(14, 6))
+        lbl(hdr, "Friends", font=F_TITLE).pack(side="left")
+        ghost_btn(hdr, "↻ Refresh", self._refresh_friends_tab, w=110, h=34).pack(side="right")
+
+        add = ctk.CTkFrame(tab, fg_color="transparent"); add.pack(fill="x", padx=20, pady=6)
+        self.friend_tab_entry = ctk.CTkEntry(
+            add, width=260, height=36, corner_radius=10, fg_color=CARD2, border_color=BORDER2,
+            text_color=FG, font=F_BODY, placeholder_text="username to add")
+        self.friend_tab_entry.pack(side="left", padx=(0, 8))
+        pill_btn(add, "Add Friend", self._send_friend_request_from_friends_tab,
+                 fg="#14532d", hover="#166534", w=130, h=36).pack(side="left")
+        self.friend_tab_status = lbl(tab, "", color=FG2, font=F_LABEL); self.friend_tab_status.pack(anchor="w", padx=22, pady=(0, 6))
+
+        body = ctk.CTkFrame(tab, fg_color="transparent"); body.pack(fill="both", expand=True, padx=16, pady=8)
+        left = ctk.CTkFrame(body, fg_color="transparent"); left.pack(side="left", fill="both", expand=True, padx=6)
+        right = ctk.CTkFrame(body, fg_color="transparent"); right.pack(side="right", fill="both", expand=True, padx=6)
+
+        lbl(left, "Friends List", font=F_HEAD).pack(anchor="w", pady=(0, 4))
+        self.friends_tab_list = ctk.CTkScrollableFrame(left, fg_color="transparent")
+        self.friends_tab_list.pack(fill="both", expand=True)
+
+        lbl(right, "Friend Requests", font=F_HEAD).pack(anchor="w", pady=(0, 4))
+        self.friends_tab_reqs = ctk.CTkScrollableFrame(right, fg_color="transparent")
+        self.friends_tab_reqs.pack(fill="both", expand=True)
+
+    def _send_friend_request_from_friends_tab(self):
+        if not self.username:
+            self._notify("Must be logged in for friends.", RED); return
+        target = self.friend_tab_entry.get().strip() if hasattr(self, "friend_tab_entry") else ""
+        if not target:
+            self._notify("Enter a username.", RED); return
+        self._send_friend_request_target(
+            target,
+            status_setter=lambda: self.friend_tab_status.configure(text=f"Request sent: {target}")
+        )
+        self._ui_after(200, self._refresh_friends_tab)
+
+    def _refresh_friends_tab(self):
+        if not self.username or not hasattr(self, "friends_tab_list"):
+            return
+        def _bg():
+            try:
+                self.db.reconnect_if_needed(force=True)
+                if self.engine and self.username:
+                    self.db.save_player(self.username, self.engine.state)
+                friends = self.db.get_friends(self.username) or []
+                fin = self.db.get_incoming_friend_requests(self.username) or []
+                fout = self.db.get_outgoing_friend_requests(self.username) or []
+            except Exception:
+                friends, fin, fout = [], [], []
+            self._ui_after(0, lambda: self._render_friends_tab(friends, fin, fout))
+        threading.Thread(target=_bg, daemon=True).start()
+
+    def _render_friends_tab(self, friends, fin, fout):
+        if not hasattr(self, "friends_tab_list"):
+            return
+        for w in self.friends_tab_list.winfo_children(): w.destroy()
+        if not friends:
+            lbl(self.friends_tab_list, "No friends yet.", color=FG2).pack(pady=8)
+        else:
+            for fr in friends[:40]:
+                c = ctk.CTkFrame(self.friends_tab_list, fg_color=CARD, corner_radius=8)
+                c.pack(fill="x", pady=2)
+                cr = ctk.CTkFrame(c, fg_color="transparent"); cr.pack(fill="x", padx=10, pady=6)
+                lbl(cr, fr, color=FG, font=F_BODY).pack(side="left")
+                ghost_btn(cr, "Battle/Trade", lambda u=fr: self._open_player_profile(u), color=BLUE, w=110, h=28).pack(side="right")
+
+        for w in self.friends_tab_reqs.winfo_children(): w.destroy()
+        if not fin and not fout:
+            lbl(self.friends_tab_reqs, "No pending requests.", color=FG2).pack(pady=8)
+            return
+        for req in fin[:15]:
+            rid = req["id"]; sender = req["sender"]
+            c = card_frame(self.friends_tab_reqs); c.pack(fill="x", pady=2)
+            cr = ctk.CTkFrame(c, fg_color="transparent"); cr.pack(fill="x", padx=8, pady=6)
+            lbl(cr, f"From {sender}", color=FG, font=F_BODY).pack(side="left")
+            pill_btn(cr, "Accept", lambda i=rid: self._accept_friend_request(i),
+                     fg="#166534", hover="#14532d", w=76, h=28).pack(side="right", padx=(4, 0))
+            ghost_btn(cr, "Decline", lambda i=rid: self._decline_friend_request(i),
+                      color=RED, w=76, h=28).pack(side="right")
+        for req in fout[:15]:
+            c = ctk.CTkFrame(self.friends_tab_reqs, fg_color=CARD, corner_radius=8)
+            c.pack(fill="x", pady=2)
+            cr = ctk.CTkFrame(c, fg_color="transparent"); cr.pack(fill="x", padx=8, pady=6)
+            lbl(cr, f"Pending → {req['receiver']}", color=FG2, font=F_LABEL).pack(side="left")
 
     # ══════════════════════════════════════════════════════════════════════════
     #  LEADERBOARD TAB
@@ -3008,16 +3610,29 @@ class LulsRNG(ctk.CTk):
 
     def _refresh_leaderboard(self):
         def _bg():
+            try:
+                self.db.reconnect_if_needed(force=True)
+                if self.engine and self.username:
+                    self.db.save_player(self.username, self.engine.state)
+            except Exception:
+                pass
             rows = self.db.get_leaderboard()
             self._ui_after(0, lambda: self._render_leaderboard(rows))
         threading.Thread(target=_bg, daemon=True).start()
 
     def _render_leaderboard(self, rows):
+        if not hasattr(self, "lb_scroll"):
+            return
         for w in self.lb_scroll.winfo_children(): w.destroy()
+        if not isinstance(rows, list):
+            rows = []
         if not rows:
             lbl(self.lb_scroll, "No players yet.", color=FG2).pack(pady=20); return
         for i, r in enumerate(rows):
-            un    = r["username"]; rar  = r.get("rarity","Common") or "Common"
+            if not isinstance(r, dict):
+                continue
+            un    = str(r.get("username","Unknown"))
+            rar   = r.get("rarity","Common") or "Common"
             rolls = r.get("rolls",0) or 0; lvl  = r.get("level",1) or 1
             reb   = r.get("rebirths",0) or 0
             pvpw  = r.get("pvp_wins",0) or 0; bw   = r.get("boss_wins",0) or 0
@@ -3179,6 +3794,8 @@ class LulsRNG(ctk.CTk):
         self._notify(f"Battle titles set: {', '.join(titles)}", PURPLE)
 
     def _refresh_pvp_titles(self):
+        if not hasattr(self, "pvp_bt_lbl"):
+            return
         self.engine._sanitize_battle_titles()
         bt = self.engine.get_battle_titles_for_pvp()
         if bt:
@@ -3211,6 +3828,7 @@ class LulsRNG(ctk.CTk):
                 self._ui_after(0, status_setter)
             self._ui_after(120, self._refresh_pvp)
             self._ui_after(120, self._refresh_roll_friends_async)
+            self._ui_after(120, self._refresh_friends_tab)
         threading.Thread(target=_bg, daemon=True).start()
 
     def _accept_friend_request(self, req_id: int):
@@ -3218,6 +3836,7 @@ class LulsRNG(ctk.CTk):
             ok = self.db.accept_friend_request(req_id)
             self._ui_after(0, lambda: self._notify("Friend added!" if ok else "Could not accept friend request.", GREEN if ok else RED))
             self._ui_after(120, self._refresh_pvp)
+            self._ui_after(120, self._refresh_friends_tab)
         threading.Thread(target=_bg, daemon=True).start()
 
     def _decline_friend_request(self, req_id: int):
@@ -3225,6 +3844,7 @@ class LulsRNG(ctk.CTk):
             self.db.decline_friend_request(req_id)
             self._ui_after(0, lambda: self._notify("Friend request declined.", FG2))
             self._ui_after(120, self._refresh_pvp)
+            self._ui_after(120, self._refresh_friends_tab)
         threading.Thread(target=_bg, daemon=True).start()
 
     def _send_battle_request(self):
@@ -3364,21 +3984,35 @@ class LulsRNG(ctk.CTk):
         threading.Thread(target=_bg, daemon=True).start()
 
     def _refresh_pvp(self):
-        if not self.username: return
+        if (not self.username) or (not hasattr(self, "pvp_inbox_scroll")):
+            return
         def _bg():
-            inbox = self.db.get_pending_requests(self.username)
-            sent  = self.db.get_sent_requests(self.username)
-            in_trades = self.db.get_incoming_trades(self.username)
-            out_trades = self.db.get_outgoing_trades(self.username)
-            friends = self.db.get_friends(self.username)
-            fin = self.db.get_incoming_friend_requests(self.username)
-            fout = self.db.get_outgoing_friend_requests(self.username)
+            try:
+                self.db.reconnect_if_needed(force=True)
+                if self.engine and self.username:
+                    self.db.save_player(self.username, self.engine.state)
+                inbox = self.db.get_pending_requests(self.username) or []
+                sent  = self.db.get_sent_requests(self.username) or []
+                in_trades = self.db.get_incoming_trades(self.username) or []
+                out_trades = self.db.get_outgoing_trades(self.username) or []
+                friends = self.db.get_friends(self.username) or []
+                fin = self.db.get_incoming_friend_requests(self.username) or []
+                fout = self.db.get_outgoing_friend_requests(self.username) or []
+            except Exception:
+                inbox, sent, in_trades, out_trades, friends, fin, fout = [], [], [], [], [], [], []
             self._ui_after(0, lambda: self._render_pvp_inbox(inbox, sent, in_trades, out_trades, friends, fin, fout))
         threading.Thread(target=_bg, daemon=True).start()
         self._refresh_pvp_titles()
 
     def _render_pvp_inbox(self, inbox: list, sent: list, in_trades: list, out_trades: list,
                           friends: list, fin: list, fout: list):
+        inbox = inbox if isinstance(inbox, list) else []
+        sent = sent if isinstance(sent, list) else []
+        in_trades = in_trades if isinstance(in_trades, list) else []
+        out_trades = out_trades if isinstance(out_trades, list) else []
+        friends = friends if isinstance(friends, list) else []
+        fin = fin if isinstance(fin, list) else []
+        fout = fout if isinstance(fout, list) else []
         self._render_roll_friends(friends)
         for w in self.friend_list_scroll.winfo_children(): w.destroy()
         if not friends:
@@ -3574,7 +4208,9 @@ class LulsRNG(ctk.CTk):
         for a in achs: self._notify(f"🏆 {a['name']}", GOLD)
 
     def _decline_battle(self, request_id: int):
-        def _bg(): self.db.decline_request(request_id); self.after(100, self._refresh_pvp)
+        def _bg():
+            self.db.decline_request(request_id)
+            self._ui_after(100, self._refresh_pvp)
         threading.Thread(target=_bg, daemon=True).start()
         self._notify("Battle request declined.", FG2)
 
@@ -3876,6 +4512,15 @@ class LulsRNG(ctk.CTk):
     #  NOTIFICATIONS
     # ══════════════════════════════════════════════════════════════════════════
     def _notify(self, msg: str, color=GREEN):
+        if self._stable_mode:
+            try:
+                if not hasattr(self, "_status_notice"):
+                    self._status_notice = lbl(self, "", color=FG2, font=F_SMALL)
+                    self._status_notice.place(relx=0.5, rely=0.985, anchor="s")
+                self._status_notice.configure(text=msg, text_color=color)
+            except Exception:
+                pass
+            return
         try:
             b = ctk.CTkFrame(self, fg_color=CARD, corner_radius=24,
                               border_width=1, border_color=color)
@@ -3890,6 +4535,9 @@ class LulsRNG(ctk.CTk):
         except: pass
 
     def _big_notify(self, msg: str, color: str):
+        if self._stable_mode:
+            self._notify(msg.replace("\n", " | "), color)
+            return
         try:
             p = ctk.CTkFrame(self, fg_color=CARD, corner_radius=24,
                               border_width=2, border_color=color)
@@ -3900,13 +4548,18 @@ class LulsRNG(ctk.CTk):
         except: pass
 
     def _is_tab_unlocked(self, tab_name: str) -> bool:
+        if tab_name in ALWAYS_UNLOCKED_TABS:
+            return True
         lvl = self.engine.state.level if self.engine else 1
         req = TAB_UNLOCK_LEVELS.get(tab_name, 1)
         return lvl >= req
 
     def _next_locked_level(self) -> Optional[int]:
         lvl = self.engine.state.level if self.engine else 1
-        locked_levels = sorted({req for req in TAB_UNLOCK_LEVELS.values() if req > lvl})
+        locked_levels = sorted({
+            req for tab, req in TAB_UNLOCK_LEVELS.items()
+            if tab not in ALWAYS_UNLOCKED_TABS and req > lvl
+        })
         return locked_levels[0] if locked_levels else None
 
     def _update_tab_access(self, announce=False):
@@ -3917,7 +4570,7 @@ class LulsRNG(ctk.CTk):
 
         if announce and lvl > self._last_unlock_level_checked:
             newly = [t for t, req in TAB_UNLOCK_LEVELS.items()
-                     if self._last_unlock_level_checked < req <= lvl]
+                     if t not in ALWAYS_UNLOCKED_TABS and self._last_unlock_level_checked < req <= lvl]
             for t in sorted(newly, key=lambda x: TAB_UNLOCK_LEVELS.get(x, 1)):
                 self._notify(f"🔓 Unlocked: {t}", GREEN)
             self._last_unlock_level_checked = lvl
@@ -3928,7 +4581,7 @@ class LulsRNG(ctk.CTk):
             btn = buttons.get(t)
             if not btn:
                 continue
-            if lvl >= req:
+            if t in ALWAYS_UNLOCKED_TABS or lvl >= req:
                 btn.configure(text_color=FG, hover_color="#162032")
             elif next_lvl is not None and req == next_lvl:
                 btn.configure(text_color="#7f8aa3", hover_color="#1a2333")
@@ -3950,6 +4603,46 @@ class LulsRNG(ctk.CTk):
         current = self.tabs.get()
         if self._is_tab_unlocked(current):
             self._last_open_tab = current
+            if self._stable_mode:
+                self._build_tab_if_needed(current)
+                # Refresh tab-specific content only after it exists.
+                try:
+                    if current == "🎒 Inventory":
+                        self._refresh_inventory()
+                    elif current == "⚔️ Arena":
+                        self._refresh_arena()
+                    elif current == "💀 Boss":
+                        self._refresh_boss()
+                    elif current == "🛒 Shop":
+                        self._refresh_top_bar()
+                    elif current == "⚗️ Craft":
+                        self._refresh_craft()
+                    elif current == "📖 Collection":
+                        self._refresh_collection()
+                    elif current == "📊 Stats":
+                        self._refresh_stats()
+                    elif current == "♻️ Rebirth":
+                        self._refresh_rebirth()
+                    elif current == "📰 Updates":
+                        self._render_updates()
+                    elif current == "🤝 Friends":
+                        self._online_tick_enabled = True
+                        self._refresh_friends_tab()
+                        self._online_tick()
+                    elif current == "🌍 Online":
+                        self._online_tick_enabled = True
+                        self._refresh_online()
+                        self._online_tick()
+                    elif current == "🏆 Leaderboard":
+                        self._online_tick_enabled = True
+                        self._refresh_leaderboard()
+                        self._online_tick()
+                    elif current == "⚔ PvP":
+                        self._online_tick_enabled = True
+                        self._refresh_pvp()
+                        self._online_tick()
+                except Exception as e:
+                    _trace(f"Lazy tab refresh failed {current}: {e}")
             return
         req = TAB_UNLOCK_LEVELS.get(current, 1)
         self._notify(f"{current} opens at level {req}.", RED)
@@ -4030,21 +4723,39 @@ class LulsRNG(ctk.CTk):
         self.live_status_lbl.configure(text=status)
 
     def _refresh_all(self):
-        self._refresh_top_bar(); self._refresh_roll_info()
-        self._refresh_inventory(); self._refresh_arena(); self._refresh_boss()
-        self._refresh_craft(); self._refresh_collection()
-        self._refresh_stats(); self._refresh_rebirth(); self._refresh_endgame()
-        self._render_updates() if hasattr(self, "upd_scroll") else None
-        self._refresh_pvp_titles()
-        self._refresh_leaderboard()
-        self._refresh_online()
-        self._refresh_pvp()
-        self._refresh_roll_friends_async()
-        self._tick_live_status()
+        _trace("refresh_all begin")
+        if self._stable_mode:
+            self._refresh_core_startup()
+            _trace("refresh_all end (stable mode)")
+            return
+        steps = [
+            self._refresh_top_bar, self._refresh_roll_info,
+            self._refresh_inventory, self._refresh_arena, self._refresh_boss,
+            self._refresh_craft, self._refresh_collection,
+            self._refresh_stats, self._refresh_rebirth, self._refresh_endgame,
+            (self._render_updates if hasattr(self, "upd_scroll") else None),
+            self._refresh_pvp_titles,
+            self._refresh_leaderboard,
+            self._refresh_online,
+            self._refresh_pvp,
+            self._refresh_roll_friends_async,
+            self._tick_live_status,
+        ]
+        for step in steps:
+            if not step:
+                continue
+            try:
+                step()
+            except Exception as e:
+                print(f"[UI] Refresh step failed: {e}")
+                _trace(f"refresh_all step failed: {e}")
+        _trace("refresh_all end")
 
     def _final_sync(self):
         try:
+            _trace("final_sync begin")
             if not self.engine:
+                _trace("final_sync: no engine")
                 return True, ""
             # Always persist local first.
             self.engine.save_game()
@@ -4053,15 +4764,21 @@ class LulsRNG(ctk.CTk):
                 if not self.db.conn:
                     self.db.reconnect_if_needed(force=True)
                 if not self.db.conn:
-                    return False, "Cloud sync unavailable (offline). Local save was kept."
+                    _trace("final_sync: cloud unavailable")
+                    # Treat as non-fatal; local save already persisted.
+                    return True, ""
                 ok = self.db.save_player(self.engine.username, self.engine.state)
                 if not ok:
-                    return False, "Cloud sync failed on close. Local save was kept."
+                    _trace("final_sync: cloud save failed")
+                    return True, ""
+            _trace("final_sync success")
             return True, ""
-        except Exception:
+        except Exception as e:
+            _trace_exc("final_sync exception", e)
             return False, "Unexpected save error on close. Local save was kept."
 
     def _on_close(self):
+        _trace("on_close called")
         self._is_closing = True
         ok, msg = self._final_sync()
         if not ok:
@@ -4069,6 +4786,8 @@ class LulsRNG(ctk.CTk):
                 messagebox.showwarning("Save Warning", msg)
             except Exception:
                 print(f"[WARN] {msg}")
+                _trace(f"on_close warning: {msg}")
+        _trace("destroy app")
         self.destroy()
 
 
@@ -4076,7 +4795,27 @@ class LulsRNG(ctk.CTk):
 #  ENTRY POINT
 # ══════════════════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
-    ctk.set_appearance_mode("dark")
-    ctk.set_default_color_theme("blue")
-    app = LulsRNG()
-    app.mainloop()
+    def _thread_excepthook(args):
+        _log_exception(f"Thread exception in {getattr(args, 'thread', None)}", args.exc_value)
+        _trace(f"Thread exception in {getattr(args, 'thread', None)}: {args.exc_value}")
+    try:
+        threading.excepthook = _thread_excepthook
+    except Exception:
+        pass
+
+    try:
+        _trace("Process start")
+        ctk.set_appearance_mode("dark")
+        ctk.set_default_color_theme("blue")
+        _trace("CTk theme configured")
+        app = LulsRNG()
+        _trace("App instance created; entering mainloop")
+        app.mainloop()
+        _trace("Mainloop exited")
+    except Exception as e:
+        _log_exception("Fatal startup exception", e)
+        _trace(f"Fatal startup exception: {e}")
+        try:
+            messagebox.showerror("Fatal Error", f"Startup failed.\n\nError log:\n{ERROR_LOG}")
+        except Exception:
+            print(f"[FATAL] Startup failed. See: {ERROR_LOG}")

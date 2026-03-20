@@ -1,0 +1,28 @@
+[2026-03-17T15:28:23] Starting LULS RNG 2...
+[2026-03-17T15:28:24] TLS verify failed. Switched to compatibility TLS mode.
+[2026-03-17T15:28:24] fatal startup: LoginWindow._register() takes 1 positional argument but 2 were given
+Traceback (most recent call last):
+  File "/Users/emers/Downloads/lulsrng/lulsrng2.py", line 997, in <module>
+    app = LulsRNG2()
+  File "/Users/emers/Downloads/lulsrng/lulsrng2.py", line 527, in __init__
+    LoginWindow(self, self.api, self._on_auth_done)
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/emers/Downloads/lulsrng/lulsrng2.py", line 432, in __init__
+    super().__init__(master)
+    ~~~~~~~~~~~~~~~~^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages/customtkinter/windows/ctk_toplevel.py", line 36, in __init__
+    super().__init__(*args, **pop_from_dict_by_set(kwargs, self._valid_tk_toplevel_arguments))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/tkinter/__init__.py", line 2858, in __init__
+    self.protocol("WM_DELETE_WINDOW", self.destroy)
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/tkinter/__init__.py", line 2408, in wm_protocol
+    command = self._register(func)
+TypeError: LoginWindow._register() takes 1 positional argument but 2 were given
+
+[2026-03-19T14:41:51] Starting LULS RNG 2...
+[2026-03-19T14:41:51] TLS verify failed. Switched to compatibility TLS mode.
+[2026-03-19T15:04:56] Starting LULS RNG 2...
+[2026-03-19T15:04:56] TLS verify failed. Switched to compatibility TLS mode.
+[2026-03-19T15:11:03] Starting LULS RNG 2...
+[2026-03-19T15:18:14] Starting LULS RNG 2...

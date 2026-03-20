@@ -1,0 +1,865 @@
+[2026-03-17T14:21:17] [INIT] Process start
+[2026-03-17T14:21:17] [INIT] CTk theme configured
+[2026-03-17T14:21:19] [INIT] LoginScreen: offline selected
+[2026-03-17T14:21:19] [INIT] _on_login start (username=<offline>)
+[2026-03-17T14:21:19] [INIT] GameEngine loaded
+[2026-03-17T14:21:19] [INIT] Sound initialized
+[2026-03-17T14:21:19] [INIT] Window deiconified
+[2026-03-17T14:21:19] [INIT] Building UI
+[2026-03-17T14:21:19] [INIT] _build_ui begin
+[2026-03-17T14:21:19] [INIT] Lazy build tab: 🎲 Roll
+[2026-03-17T14:21:19] [INIT] Lazy built tab: 🎲 Roll
+[2026-03-17T14:21:19] [INIT] _build_ui end
+[2026-03-17T14:21:19] [INIT] UI built; refreshing core startup
+[2026-03-17T14:21:19] [INIT] Core startup refresh begin
+[2026-03-17T14:21:19] [INIT] Refresh step: top_bar
+[2026-03-17T14:21:19] [INIT] Refresh done: top_bar
+[2026-03-17T14:21:19] [INIT] Refresh step: roll_info
+[2026-03-17T14:21:19] [INIT] Refresh done: roll_info
+[2026-03-17T14:21:19] [INIT] Refresh step: live_status
+[2026-03-17T14:21:19] [INIT] Refresh done: live_status
+[2026-03-17T14:21:19] [INIT] Core startup refresh end
+[2026-03-17T14:21:19] [INIT] Core startup refresh complete
+[2026-03-17T14:21:19] [INIT] Registered final sync
+[2026-03-17T14:21:19] [INIT] Stable mode: skipped auto daily + anim + slow tick
+[2026-03-17T14:21:19] [INIT] _on_login complete
+[2026-03-17T14:21:19] [INIT] App instance created; entering mainloop
+
+[2026-03-17T14:21:21] Tk callback exception
+Traceback (most recent call last):
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/tkinter/__init__.py", line 2093, in __call__
+    return self.func(*args)
+           ~~~~~~~~~^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages/customtkinter/windows/widgets/ctk_button.py", line 554, in _clicked
+    self._command()
+    ~~~~~~~~~~~~~^^
+  File "/Users/emers/Downloads/lulsrng/lulsrng1.2.py", line 2535, in _do_roll
+    self._finish_roll_simple()
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/emers/Downloads/lulsrng/lulsrng1.2.py", line 2558, in _finish_roll_simple
+    self._refresh_inventory(); self._refresh_collection(); self._refresh_stats()
+    ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/emers/Downloads/lulsrng/lulsrng1.2.py", line 2830, in _refresh_inventory
+    for w in self.inv_list.winfo_children(): w.destroy()
+             ^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/tkinter/__init__.py", line 2571, in __getattr__
+    return getattr(self.tk, attr)
+AttributeError: '_tkinter.tkapp' object has no attribute 'inv_list'
+
+[2026-03-17T14:21:21] [INIT] Tk callback exception: '_tkinter.tkapp' object has no attribute 'inv_list'
+
+[2026-03-17T14:21:25] Tk callback exception
+Traceback (most recent call last):
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/tkinter/__init__.py", line 2093, in __call__
+    return self.func(*args)
+           ~~~~~~~~~^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages/customtkinter/windows/widgets/ctk_button.py", line 554, in _clicked
+    self._command()
+    ~~~~~~~~~~~~~^^
+  File "/Users/emers/Downloads/lulsrng/lulsrng1.2.py", line 2535, in _do_roll
+    self._finish_roll_simple()
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/emers/Downloads/lulsrng/lulsrng1.2.py", line 2558, in _finish_roll_simple
+    self._refresh_inventory(); self._refresh_collection(); self._refresh_stats()
+    ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/emers/Downloads/lulsrng/lulsrng1.2.py", line 2830, in _refresh_inventory
+    for w in self.inv_list.winfo_children(): w.destroy()
+             ^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/tkinter/__init__.py", line 2571, in __getattr__
+    return getattr(self.tk, attr)
+AttributeError: '_tkinter.tkapp' object has no attribute 'inv_list'
+
+[2026-03-17T14:21:25] [INIT] Tk callback exception: '_tkinter.tkapp' object has no attribute 'inv_list'
+[2026-03-17T14:21:28] [INIT] on_close called
+[2026-03-17T14:21:28] [INIT] final_sync begin
+[2026-03-17T14:21:28] [INIT] final_sync success
+[2026-03-17T14:21:28] [INIT] destroy app
+[2026-03-17T14:21:28] [INIT] Mainloop exited
+[2026-03-17T14:21:28] [INIT] final_sync begin
+[2026-03-17T14:21:28] [INIT] final_sync success
+[2026-03-17T14:24:36] [INIT] Process start
+[2026-03-17T14:24:36] [INIT] CTk theme configured
+[2026-03-17T14:24:38] [INIT] LoginScreen: offline selected
+[2026-03-17T14:24:38] [INIT] _on_login start (username=<offline>)
+[2026-03-17T14:24:38] [INIT] GameEngine loaded
+[2026-03-17T14:24:38] [INIT] Sound initialized
+[2026-03-17T14:24:38] [INIT] Window deiconified
+[2026-03-17T14:24:38] [INIT] Building UI
+[2026-03-17T14:24:38] [INIT] _build_ui begin
+[2026-03-17T14:24:38] [INIT] Lazy build tab: 🎲 Roll
+[2026-03-17T14:24:38] [INIT] Lazy built tab: 🎲 Roll
+[2026-03-17T14:24:38] [INIT] _build_ui end
+[2026-03-17T14:24:38] [INIT] UI built; refreshing core startup
+[2026-03-17T14:24:38] [INIT] Core startup refresh begin
+[2026-03-17T14:24:38] [INIT] Refresh step: top_bar
+[2026-03-17T14:24:38] [INIT] Refresh done: top_bar
+[2026-03-17T14:24:38] [INIT] Refresh step: roll_info
+[2026-03-17T14:24:38] [INIT] Refresh done: roll_info
+[2026-03-17T14:24:38] [INIT] Refresh step: live_status
+[2026-03-17T14:24:38] [INIT] Refresh done: live_status
+[2026-03-17T14:24:38] [INIT] Core startup refresh end
+[2026-03-17T14:24:38] [INIT] Core startup refresh complete
+[2026-03-17T14:24:38] [INIT] Registered final sync
+[2026-03-17T14:24:38] [INIT] Stable mode: skipped auto daily + anim + slow tick
+[2026-03-17T14:24:38] [INIT] _on_login complete
+[2026-03-17T14:24:38] [INIT] App instance created; entering mainloop
+
+[2026-03-17T14:24:39] Tk callback exception
+Traceback (most recent call last):
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/tkinter/__init__.py", line 2093, in __call__
+    return self.func(*args)
+           ~~~~~~~~~^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages/customtkinter/windows/widgets/ctk_button.py", line 554, in _clicked
+    self._command()
+    ~~~~~~~~~~~~~^^
+  File "/Users/emers/Downloads/lulsrng/lulsrng1.2.py", line 2561, in _do_roll
+    self._finish_roll_simple()
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/emers/Downloads/lulsrng/lulsrng1.2.py", line 2584, in _finish_roll_simple
+    self._refresh_inventory(); self._refresh_collection(); self._refresh_stats()
+    ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/emers/Downloads/lulsrng/lulsrng1.2.py", line 2862, in _refresh_inventory
+    for w in self.inv_list.winfo_children(): w.destroy()
+             ^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/tkinter/__init__.py", line 2571, in __getattr__
+    return getattr(self.tk, attr)
+AttributeError: '_tkinter.tkapp' object has no attribute 'inv_list'
+
+[2026-03-17T14:24:39] [INIT] Tk callback exception: '_tkinter.tkapp' object has no attribute 'inv_list'
+[2026-03-17T14:24:43] [INIT] on_close called
+[2026-03-17T14:24:43] [INIT] final_sync begin
+[2026-03-17T14:24:43] [INIT] final_sync success
+[2026-03-17T14:24:43] [INIT] destroy app
+[2026-03-17T14:24:43] [INIT] Mainloop exited
+[2026-03-17T14:24:43] [INIT] final_sync begin
+[2026-03-17T14:24:43] [INIT] final_sync success
+[2026-03-17T14:28:32] [INIT] Process start
+[2026-03-17T14:28:32] [INIT] CTk theme configured
+[2026-03-17T14:30:54] [INIT] LoginScreen: offline selected
+[2026-03-17T14:30:54] [INIT] _on_login start (username=<offline>)
+[2026-03-17T14:30:54] [INIT] GameEngine loaded
+[2026-03-17T14:30:54] [INIT] Sound initialized
+[2026-03-17T14:30:54] [INIT] Window deiconified
+[2026-03-17T14:30:54] [INIT] Building UI
+[2026-03-17T14:30:54] [INIT] _build_ui begin
+[2026-03-17T14:30:54] [INIT] Lazy build tab: 🎲 Roll
+[2026-03-17T14:30:54] [INIT] Lazy built tab: 🎲 Roll
+[2026-03-17T14:30:54] [INIT] _build_ui end
+[2026-03-17T14:30:54] [INIT] UI built; refreshing core startup
+[2026-03-17T14:30:54] [INIT] Core startup refresh begin
+[2026-03-17T14:30:54] [INIT] Refresh step: top_bar
+[2026-03-17T14:30:54] [INIT] Refresh done: top_bar
+[2026-03-17T14:30:54] [INIT] Refresh step: roll_info
+[2026-03-17T14:30:54] [INIT] Refresh done: roll_info
+[2026-03-17T14:30:54] [INIT] Refresh step: live_status
+[2026-03-17T14:30:54] [INIT] Refresh done: live_status
+[2026-03-17T14:30:54] [INIT] Core startup refresh end
+[2026-03-17T14:30:54] [INIT] Core startup refresh complete
+[2026-03-17T14:30:54] [INIT] Registered final sync
+[2026-03-17T14:30:54] [INIT] Stable mode: skipped auto daily + anim + slow tick
+[2026-03-17T14:30:54] [INIT] _on_login complete
+[2026-03-17T14:30:54] [INIT] App instance created; entering mainloop
+[2026-03-17T14:30:59] [INIT] Lazy build tab: 🎒 Inventory
+[2026-03-17T14:30:59] [INIT] Lazy built tab: 🎒 Inventory
+[2026-03-17T14:31:05] [INIT] on_close called
+[2026-03-17T14:31:05] [INIT] final_sync begin
+[2026-03-17T14:31:05] [INIT] final_sync success
+[2026-03-17T14:31:05] [INIT] destroy app
+[2026-03-17T14:31:05] [INIT] Mainloop exited
+[2026-03-17T14:31:05] [INIT] final_sync begin
+[2026-03-17T14:31:05] [INIT] final_sync success
+[2026-03-17T14:31:15] [INIT] Process start
+[2026-03-17T14:31:15] [INIT] CTk theme configured
+[2026-03-17T14:31:20] [INIT] LoginScreen: login pressed
+[2026-03-17T14:31:20] [INIT] LoginScreen: login success
+[2026-03-17T14:31:20] [INIT] _on_login start (username=emmy)
+[2026-03-17T14:31:20] [INIT] GameEngine loaded
+[2026-03-17T14:31:20] [INIT] Sound initialized
+[2026-03-17T14:31:20] [INIT] Window deiconified
+[2026-03-17T14:31:20] [INIT] Building UI
+[2026-03-17T14:31:20] [INIT] _build_ui begin
+[2026-03-17T14:31:20] [INIT] Lazy build tab: 🎲 Roll
+[2026-03-17T14:31:20] [INIT] Lazy built tab: 🎲 Roll
+[2026-03-17T14:31:20] [INIT] _build_ui end
+[2026-03-17T14:31:20] [INIT] UI built; refreshing core startup
+[2026-03-17T14:31:20] [INIT] Core startup refresh begin
+[2026-03-17T14:31:20] [INIT] Refresh step: top_bar
+[2026-03-17T14:31:20] [INIT] Refresh done: top_bar
+[2026-03-17T14:31:20] [INIT] Refresh step: roll_info
+[2026-03-17T14:31:20] [INIT] Refresh done: roll_info
+[2026-03-17T14:31:20] [INIT] Refresh step: live_status
+[2026-03-17T14:31:20] [INIT] Refresh done: live_status
+[2026-03-17T14:31:20] [INIT] Core startup refresh end
+[2026-03-17T14:31:20] [INIT] Core startup refresh complete
+[2026-03-17T14:31:20] [INIT] Registered final sync
+[2026-03-17T14:31:20] [INIT] Stable mode: skipped auto daily + anim + slow tick
+[2026-03-17T14:31:20] [INIT] Scheduled online refresh/polling
+[2026-03-17T14:31:20] [INIT] _on_login complete
+[2026-03-17T14:31:20] [INIT] App instance created; entering mainloop
+[2026-03-17T14:31:23] [INIT] on_close called
+[2026-03-17T14:31:23] [INIT] final_sync begin
+[2026-03-17T14:31:23] [INIT] final_sync: cloud unavailable
+[2026-03-17T14:31:24] [INIT] destroy app
+[2026-03-17T14:31:24] [INIT] Mainloop exited
+[2026-03-17T14:31:24] [INIT] final_sync begin
+[2026-03-17T14:31:24] [INIT] final_sync: cloud unavailable
+[2026-03-17T14:32:09] [INIT] Process start
+[2026-03-17T14:32:09] [INIT] CTk theme configured
+[2026-03-17T14:32:16] [INIT] LoginScreen: login pressed
+[2026-03-17T14:32:16] [INIT] LoginScreen: login success
+[2026-03-17T14:32:16] [INIT] _on_login start (username=emmy)
+[2026-03-17T14:32:16] [INIT] GameEngine loaded
+[2026-03-17T14:32:16] [INIT] Sound initialized
+[2026-03-17T14:32:16] [INIT] Window deiconified
+[2026-03-17T14:32:16] [INIT] Building UI
+[2026-03-17T14:32:16] [INIT] _build_ui begin
+[2026-03-17T14:32:16] [INIT] Lazy build tab: 🎲 Roll
+[2026-03-17T14:32:16] [INIT] Lazy built tab: 🎲 Roll
+[2026-03-17T14:32:16] [INIT] _build_ui end
+[2026-03-17T14:32:16] [INIT] UI built; refreshing core startup
+[2026-03-17T14:32:16] [INIT] Core startup refresh begin
+[2026-03-17T14:32:16] [INIT] Refresh step: top_bar
+[2026-03-17T14:32:16] [INIT] Refresh done: top_bar
+[2026-03-17T14:32:16] [INIT] Refresh step: roll_info
+[2026-03-17T14:32:16] [INIT] Refresh done: roll_info
+[2026-03-17T14:32:16] [INIT] Refresh step: live_status
+[2026-03-17T14:32:16] [INIT] Refresh done: live_status
+[2026-03-17T14:32:16] [INIT] Core startup refresh end
+[2026-03-17T14:32:16] [INIT] Core startup refresh complete
+[2026-03-17T14:32:16] [INIT] Registered final sync
+[2026-03-17T14:32:16] [INIT] Stable mode: skipped auto daily + anim + slow tick
+[2026-03-17T14:32:16] [INIT] Scheduled online refresh/polling
+[2026-03-17T14:32:16] [INIT] _on_login complete
+[2026-03-17T14:32:16] [INIT] App instance created; entering mainloop
+[2026-03-17T14:32:23] [INIT] Lazy build tab: 🎒 Inventory
+[2026-03-17T14:32:23] [INIT] Lazy built tab: 🎒 Inventory
+[2026-03-17T14:32:28] [INIT] on_close called
+[2026-03-17T14:32:28] [INIT] final_sync begin
+[2026-03-17T14:32:28] [INIT] final_sync: cloud unavailable
+[2026-03-17T14:32:31] [INIT] destroy app
+[2026-03-17T14:32:31] [INIT] Mainloop exited
+[2026-03-17T14:32:31] [INIT] final_sync begin
+[2026-03-17T14:32:31] [INIT] final_sync: cloud unavailable
+[2026-03-17T14:39:40] [INIT] Process start
+[2026-03-17T14:39:40] [INIT] CTk theme configured
+[2026-03-17T14:39:47] [INIT] LoginScreen: login pressed
+[2026-03-17T14:39:48] [INIT] LoginScreen: login success
+[2026-03-17T14:39:48] [INIT] _on_login start (username=emmy)
+[2026-03-17T14:39:48] [INIT] GameEngine loaded
+[2026-03-17T14:39:48] [INIT] Sound initialized
+[2026-03-17T14:39:48] [INIT] Window deiconified
+[2026-03-17T14:39:48] [INIT] Building UI
+[2026-03-17T14:39:48] [INIT] _build_ui begin
+[2026-03-17T14:39:48] [INIT] Lazy build tab: 🎲 Roll
+[2026-03-17T14:39:48] [INIT] Lazy built tab: 🎲 Roll
+[2026-03-17T14:39:48] [INIT] _build_ui end
+[2026-03-17T14:39:48] [INIT] UI built; refreshing core startup
+[2026-03-17T14:39:48] [INIT] Core startup refresh begin
+[2026-03-17T14:39:48] [INIT] Refresh step: top_bar
+[2026-03-17T14:39:48] [INIT] Refresh done: top_bar
+[2026-03-17T14:39:48] [INIT] Refresh step: roll_info
+[2026-03-17T14:39:48] [INIT] Refresh done: roll_info
+[2026-03-17T14:39:48] [INIT] Refresh step: live_status
+[2026-03-17T14:39:48] [INIT] Refresh done: live_status
+[2026-03-17T14:39:48] [INIT] Core startup refresh end
+[2026-03-17T14:39:48] [INIT] Core startup refresh complete
+[2026-03-17T14:39:48] [INIT] Registered final sync
+[2026-03-17T14:39:48] [INIT] Stable mode: skipped auto daily + anim + slow tick
+[2026-03-17T14:39:48] [INIT] Scheduled online refresh/polling
+[2026-03-17T14:39:48] [INIT] _on_login complete
+[2026-03-17T14:39:48] [INIT] App instance created; entering mainloop
+[2026-03-17T14:39:53] [INIT] on_close called
+[2026-03-17T14:39:53] [INIT] final_sync begin
+[2026-03-17T14:39:53] [INIT] final_sync: cloud unavailable
+[2026-03-17T14:39:53] [INIT] destroy app
+[2026-03-17T14:39:53] [INIT] Mainloop exited
+[2026-03-17T14:39:53] [INIT] final_sync begin
+[2026-03-17T14:39:53] [INIT] final_sync: cloud unavailable
+[2026-03-17T14:40:02] [INIT] Process start
+[2026-03-17T14:40:02] [INIT] CTk theme configured
+[2026-03-17T14:40:08] [INIT] LoginScreen: login pressed
+[2026-03-17T14:40:08] [INIT] LoginScreen: login success
+[2026-03-17T14:40:08] [INIT] _on_login start (username=emmy)
+[2026-03-17T14:40:08] [INIT] GameEngine loaded
+[2026-03-17T14:40:08] [INIT] Sound initialized
+[2026-03-17T14:40:08] [INIT] Window deiconified
+[2026-03-17T14:40:08] [INIT] Building UI
+[2026-03-17T14:40:08] [INIT] _build_ui begin
+[2026-03-17T14:40:08] [INIT] Lazy build tab: 🎲 Roll
+[2026-03-17T14:40:08] [INIT] Lazy built tab: 🎲 Roll
+[2026-03-17T14:40:08] [INIT] _build_ui end
+[2026-03-17T14:40:08] [INIT] UI built; refreshing core startup
+[2026-03-17T14:40:08] [INIT] Core startup refresh begin
+[2026-03-17T14:40:08] [INIT] Refresh step: top_bar
+[2026-03-17T14:40:08] [INIT] Refresh done: top_bar
+[2026-03-17T14:40:08] [INIT] Refresh step: roll_info
+[2026-03-17T14:40:08] [INIT] Refresh done: roll_info
+[2026-03-17T14:40:08] [INIT] Refresh step: live_status
+[2026-03-17T14:40:08] [INIT] Refresh done: live_status
+[2026-03-17T14:40:08] [INIT] Core startup refresh end
+[2026-03-17T14:40:08] [INIT] Core startup refresh complete
+[2026-03-17T14:40:08] [INIT] Registered final sync
+[2026-03-17T14:40:08] [INIT] Stable mode: skipped auto daily + anim + slow tick
+[2026-03-17T14:40:08] [INIT] Scheduled online refresh/polling
+[2026-03-17T14:40:08] [INIT] _on_login complete
+[2026-03-17T14:40:08] [INIT] App instance created; entering mainloop
+[2026-03-17T14:40:10] [INIT] Lazy build tab: 🌍 Online
+[2026-03-17T14:40:10] [INIT] Lazy built tab: 🌍 Online
+[2026-03-17T14:40:10] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:40:10] [INIT] Run callback: _render_online
+[2026-03-17T14:40:15] [INIT] on_close called
+[2026-03-17T14:40:15] [INIT] final_sync begin
+[2026-03-17T14:40:15] [INIT] final_sync: cloud unavailable
+[2026-03-17T14:40:15] [INIT] destroy app
+[2026-03-17T14:40:15] [INIT] Mainloop exited
+[2026-03-17T14:40:15] [INIT] final_sync begin
+[2026-03-17T14:40:15] [INIT] final_sync: cloud unavailable
+[2026-03-17T14:43:07] [INIT] Process start
+[2026-03-17T14:43:07] [INIT] CTk theme configured
+[2026-03-17T14:43:16] [INIT] LoginScreen: login pressed
+[2026-03-17T14:43:16] [INIT] LoginScreen: login success
+[2026-03-17T14:43:16] [INIT] _on_login start (username=emmy)
+[2026-03-17T14:43:16] [INIT] GameEngine loaded
+[2026-03-17T14:43:16] [INIT] Sound initialized
+[2026-03-17T14:43:16] [INIT] Window deiconified
+[2026-03-17T14:43:16] [INIT] Building UI
+[2026-03-17T14:43:16] [INIT] _build_ui begin
+[2026-03-17T14:43:16] [INIT] Lazy build tab: 🎲 Roll
+[2026-03-17T14:43:16] [INIT] Lazy built tab: 🎲 Roll
+[2026-03-17T14:43:16] [INIT] _build_ui end
+[2026-03-17T14:43:16] [INIT] UI built; refreshing core startup
+[2026-03-17T14:43:16] [INIT] Core startup refresh begin
+[2026-03-17T14:43:16] [INIT] Refresh step: top_bar
+[2026-03-17T14:43:16] [INIT] Refresh done: top_bar
+[2026-03-17T14:43:16] [INIT] Refresh step: roll_info
+[2026-03-17T14:43:16] [INIT] Refresh done: roll_info
+[2026-03-17T14:43:16] [INIT] Refresh step: live_status
+[2026-03-17T14:43:16] [INIT] Refresh done: live_status
+[2026-03-17T14:43:16] [INIT] Core startup refresh end
+[2026-03-17T14:43:16] [INIT] Core startup refresh complete
+[2026-03-17T14:43:16] [INIT] Registered final sync
+[2026-03-17T14:43:16] [INIT] Stable mode: skipped auto daily + anim + slow tick
+[2026-03-17T14:43:16] [INIT] Scheduled online refresh/polling
+[2026-03-17T14:43:16] [INIT] _on_login complete
+[2026-03-17T14:43:16] [INIT] App instance created; entering mainloop
+[2026-03-17T14:43:18] [INIT] Deferred online refresh begin
+[2026-03-17T14:43:18] [INIT] Deferred online refresh end
+[2026-03-17T14:43:18] [INIT] Schedule callback in 0ms: <lambda>
+[2026-03-17T14:43:18] [INIT] Run callback: <lambda>
+[2026-03-17T14:43:18] [INIT] Ignored callback error: '_tkinter.tkapp' object has no attribute 'lb_scroll'
+
+[2026-03-17T14:43:18] Ignored callback error
+Traceback (most recent call last):
+  File "/Users/emers/Downloads/lulsrng/lulsrng1.2.py", line 2097, in _safe_ui_call
+    fn()
+    ~~^^
+  File "/Users/emers/Downloads/lulsrng/lulsrng1.2.py", line 3576, in <lambda>
+    self._ui_after(0, lambda: self._render_leaderboard(rows))
+                              ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/emers/Downloads/lulsrng/lulsrng1.2.py", line 3580, in _render_leaderboard
+    for w in self.lb_scroll.winfo_children(): w.destroy()
+             ^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/tkinter/__init__.py", line 2571, in __getattr__
+    return getattr(self.tk, attr)
+AttributeError: '_tkinter.tkapp' object has no attribute 'lb_scroll'
+
+[2026-03-17T14:43:18] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:43:18] [INIT] Run callback: _render_online
+[2026-03-17T14:43:18] [INIT] Ignored callback error: '_tkinter.tkapp' object has no attribute 'online_scroll'
+
+[2026-03-17T14:43:18] Ignored callback error
+Traceback (most recent call last):
+  File "/Users/emers/Downloads/lulsrng/lulsrng1.2.py", line 2097, in _safe_ui_call
+    fn()
+    ~~^^
+  File "/Users/emers/Downloads/lulsrng/lulsrng1.2.py", line 3407, in _render_online
+    for w in self.online_scroll.winfo_children(): w.destroy()
+             ^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/tkinter/__init__.py", line 2571, in __getattr__
+    return getattr(self.tk, attr)
+AttributeError: '_tkinter.tkapp' object has no attribute 'online_scroll'
+
+[2026-03-17T14:43:23] [INIT] online_tick begin
+[2026-03-17T14:43:23] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:43:23] [INIT] online_tick worker end
+[2026-03-17T14:43:23] [INIT] Run callback: _render_online
+[2026-03-17T14:43:23] [INIT] Ignored callback error: '_tkinter.tkapp' object has no attribute 'online_scroll'
+
+[2026-03-17T14:43:23] Ignored callback error
+Traceback (most recent call last):
+  File "/Users/emers/Downloads/lulsrng/lulsrng1.2.py", line 2097, in _safe_ui_call
+    fn()
+    ~~^^
+  File "/Users/emers/Downloads/lulsrng/lulsrng1.2.py", line 3407, in _render_online
+    for w in self.online_scroll.winfo_children(): w.destroy()
+             ^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/tkinter/__init__.py", line 2571, in __getattr__
+    return getattr(self.tk, attr)
+AttributeError: '_tkinter.tkapp' object has no attribute 'online_scroll'
+
+[2026-03-17T14:43:23] [INIT] Lazy build tab: 🌍 Online
+[2026-03-17T14:43:23] [INIT] Lazy built tab: 🌍 Online
+[2026-03-17T14:43:23] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:43:23] [INIT] Run callback: _render_online
+[2026-03-17T14:43:28] [INIT] online_tick begin
+[2026-03-17T14:43:28] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:43:28] [INIT] online_tick worker end
+[2026-03-17T14:43:28] [INIT] Run callback: _render_online
+[2026-03-17T14:43:33] [INIT] online_tick begin
+[2026-03-17T14:43:33] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:43:33] [INIT] online_tick worker end
+[2026-03-17T14:43:33] [INIT] Run callback: _render_online
+[2026-03-17T14:43:38] [INIT] online_tick begin
+[2026-03-17T14:43:38] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:43:38] [INIT] online_tick worker end
+[2026-03-17T14:43:38] [INIT] Run callback: _render_online
+[2026-03-17T14:55:22] [INIT] online_tick begin
+[2026-03-17T14:55:22] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:55:23] [INIT] Run callback: _render_online
+[2026-03-17T14:55:23] [INIT] online_tick worker end
+[2026-03-17T14:55:27] [INIT] online_tick begin
+[2026-03-17T14:55:27] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:55:27] [INIT] Run callback: _render_online
+[2026-03-17T14:55:27] [INIT] online_tick worker end
+[2026-03-17T14:55:32] [INIT] online_tick begin
+[2026-03-17T14:55:32] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:55:32] [INIT] online_tick worker end
+[2026-03-17T14:55:32] [INIT] Run callback: _render_online
+[2026-03-17T14:55:37] [INIT] online_tick begin
+[2026-03-17T14:55:37] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:55:37] [INIT] online_tick worker end
+[2026-03-17T14:55:37] [INIT] Run callback: _render_online
+[2026-03-17T14:55:42] [INIT] online_tick begin
+[2026-03-17T14:55:42] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:55:42] [INIT] online_tick worker end
+[2026-03-17T14:55:42] [INIT] Run callback: _render_online
+[2026-03-17T14:55:47] [INIT] online_tick begin
+[2026-03-17T14:55:47] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:55:47] [INIT] online_tick worker end
+[2026-03-17T14:55:47] [INIT] Run callback: _render_online
+[2026-03-17T14:55:52] [INIT] online_tick begin
+[2026-03-17T14:55:52] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:55:52] [INIT] online_tick worker end
+[2026-03-17T14:55:52] [INIT] Run callback: _render_online
+[2026-03-17T14:55:57] [INIT] online_tick begin
+[2026-03-17T14:55:57] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:55:57] [INIT] online_tick worker end
+[2026-03-17T14:55:57] [INIT] Run callback: _render_online
+[2026-03-17T14:56:02] [INIT] online_tick begin
+[2026-03-17T14:56:02] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:56:02] [INIT] online_tick worker end
+[2026-03-17T14:56:02] [INIT] Run callback: _render_online
+[2026-03-17T14:56:07] [INIT] online_tick begin
+[2026-03-17T14:56:07] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:56:07] [INIT] Run callback: _render_online
+[2026-03-17T14:56:07] [INIT] online_tick worker end
+[2026-03-17T14:56:12] [INIT] online_tick begin
+[2026-03-17T14:56:12] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:56:12] [INIT] Run callback: _render_online
+[2026-03-17T14:56:12] [INIT] online_tick worker end
+[2026-03-17T14:56:17] [INIT] online_tick begin
+[2026-03-17T14:56:17] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:56:17] [INIT] online_tick worker end
+[2026-03-17T14:56:17] [INIT] Run callback: _render_online
+[2026-03-17T14:56:22] [INIT] online_tick begin
+[2026-03-17T14:56:22] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:56:22] [INIT] online_tick worker end
+[2026-03-17T14:56:22] [INIT] Run callback: _render_online
+[2026-03-17T14:56:27] [INIT] online_tick begin
+[2026-03-17T14:56:27] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:56:27] [INIT] online_tick worker end
+[2026-03-17T14:56:27] [INIT] Run callback: _render_online
+[2026-03-17T14:56:32] [INIT] online_tick begin
+[2026-03-17T14:56:32] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:56:32] [INIT] online_tick worker end
+[2026-03-17T14:56:32] [INIT] Run callback: _render_online
+[2026-03-17T14:56:37] [INIT] online_tick begin
+[2026-03-17T14:56:37] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:56:37] [INIT] Run callback: _render_online
+[2026-03-17T14:56:37] [INIT] online_tick worker end
+[2026-03-17T14:56:42] [INIT] online_tick begin
+[2026-03-17T14:56:42] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:56:42] [INIT] online_tick worker end
+[2026-03-17T14:56:42] [INIT] Run callback: _render_online
+[2026-03-17T14:56:47] [INIT] online_tick begin
+[2026-03-17T14:56:47] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:56:47] [INIT] online_tick worker end
+[2026-03-17T14:56:47] [INIT] Run callback: _render_online
+[2026-03-17T14:56:52] [INIT] online_tick begin
+[2026-03-17T14:56:52] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:56:52] [INIT] online_tick worker end
+[2026-03-17T14:56:52] [INIT] Run callback: _render_online
+[2026-03-17T14:56:57] [INIT] online_tick begin
+[2026-03-17T14:56:57] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:56:57] [INIT] online_tick worker end
+[2026-03-17T14:56:57] [INIT] Run callback: _render_online
+[2026-03-17T14:57:02] [INIT] online_tick begin
+[2026-03-17T14:57:02] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:57:02] [INIT] online_tick worker end
+[2026-03-17T14:57:02] [INIT] Run callback: _render_online
+[2026-03-17T14:57:07] [INIT] online_tick begin
+[2026-03-17T14:57:07] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:57:07] [INIT] Run callback: _render_online
+[2026-03-17T14:57:07] [INIT] online_tick worker end
+[2026-03-17T14:57:12] [INIT] online_tick begin
+[2026-03-17T14:57:12] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:57:12] [INIT] online_tick worker end
+[2026-03-17T14:57:12] [INIT] Run callback: _render_online
+[2026-03-17T14:57:17] [INIT] online_tick begin
+[2026-03-17T14:57:17] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:57:17] [INIT] online_tick worker end
+[2026-03-17T14:57:17] [INIT] Run callback: _render_online
+[2026-03-17T14:57:22] [INIT] online_tick begin
+[2026-03-17T14:57:22] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:57:22] [INIT] online_tick worker end
+[2026-03-17T14:57:22] [INIT] Run callback: _render_online
+[2026-03-17T14:57:27] [INIT] online_tick begin
+[2026-03-17T14:57:27] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:57:27] [INIT] Run callback: _render_online
+[2026-03-17T14:57:27] [INIT] online_tick worker end
+[2026-03-17T14:57:32] [INIT] online_tick begin
+[2026-03-17T14:57:32] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:57:32] [INIT] online_tick worker end
+[2026-03-17T14:57:32] [INIT] Run callback: _render_online
+[2026-03-17T14:57:37] [INIT] online_tick begin
+[2026-03-17T14:57:37] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:57:37] [INIT] online_tick worker end
+[2026-03-17T14:57:37] [INIT] Run callback: _render_online
+[2026-03-17T14:57:42] [INIT] online_tick begin
+[2026-03-17T14:57:42] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:57:42] [INIT] online_tick worker end
+[2026-03-17T14:57:42] [INIT] Run callback: _render_online
+[2026-03-17T14:57:47] [INIT] online_tick begin
+[2026-03-17T14:57:47] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:57:47] [INIT] online_tick worker end
+[2026-03-17T14:57:47] [INIT] Run callback: _render_online
+[2026-03-17T14:57:52] [INIT] online_tick begin
+[2026-03-17T14:57:52] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:57:52] [INIT] online_tick worker end
+[2026-03-17T14:57:52] [INIT] Run callback: _render_online
+[2026-03-17T14:57:57] [INIT] online_tick begin
+[2026-03-17T14:57:57] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:57:57] [INIT] online_tick worker end
+[2026-03-17T14:57:57] [INIT] Run callback: _render_online
+[2026-03-17T14:58:02] [INIT] online_tick begin
+[2026-03-17T14:58:02] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:58:02] [INIT] Run callback: _render_online
+[2026-03-17T14:58:02] [INIT] online_tick worker end
+[2026-03-17T14:58:07] [INIT] online_tick begin
+[2026-03-17T14:58:07] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:58:07] [INIT] online_tick worker end
+[2026-03-17T14:58:07] [INIT] Run callback: _render_online
+[2026-03-17T14:58:12] [INIT] online_tick begin
+[2026-03-17T14:58:12] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:58:12] [INIT] Run callback: _render_online
+[2026-03-17T14:58:12] [INIT] online_tick worker end
+[2026-03-17T14:58:17] [INIT] online_tick begin
+[2026-03-17T14:58:17] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:58:17] [INIT] online_tick worker end
+[2026-03-17T14:58:17] [INIT] Run callback: _render_online
+[2026-03-17T14:58:22] [INIT] online_tick begin
+[2026-03-17T14:58:22] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:58:22] [INIT] online_tick worker end
+[2026-03-17T14:58:22] [INIT] Run callback: _render_online
+[2026-03-17T14:58:27] [INIT] online_tick begin
+[2026-03-17T14:58:27] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:58:27] [INIT] online_tick worker end
+[2026-03-17T14:58:27] [INIT] Run callback: _render_online
+[2026-03-17T14:58:32] [INIT] online_tick begin
+[2026-03-17T14:58:32] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:58:32] [INIT] online_tick worker end
+[2026-03-17T14:58:32] [INIT] Run callback: _render_online
+[2026-03-17T14:58:37] [INIT] online_tick begin
+[2026-03-17T14:58:37] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:58:37] [INIT] online_tick worker end
+[2026-03-17T14:58:37] [INIT] Run callback: _render_online
+[2026-03-17T14:58:42] [INIT] online_tick begin
+[2026-03-17T14:58:42] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:58:42] [INIT] Run callback: _render_online
+[2026-03-17T14:58:42] [INIT] online_tick worker end
+[2026-03-17T14:58:47] [INIT] online_tick begin
+[2026-03-17T14:58:47] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:58:47] [INIT] online_tick worker end
+[2026-03-17T14:58:47] [INIT] Run callback: _render_online
+[2026-03-17T14:58:52] [INIT] online_tick begin
+[2026-03-17T14:58:52] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:58:52] [INIT] online_tick worker end
+[2026-03-17T14:58:52] [INIT] Run callback: _render_online
+[2026-03-17T14:58:57] [INIT] online_tick begin
+[2026-03-17T14:58:57] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:58:57] [INIT] online_tick worker end
+[2026-03-17T14:58:57] [INIT] Run callback: _render_online
+[2026-03-17T14:59:02] [INIT] online_tick begin
+[2026-03-17T14:59:02] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:59:02] [INIT] online_tick worker end
+[2026-03-17T14:59:02] [INIT] Run callback: _render_online
+[2026-03-17T14:59:07] [INIT] online_tick begin
+[2026-03-17T14:59:07] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:59:07] [INIT] online_tick worker end
+[2026-03-17T14:59:07] [INIT] Run callback: _render_online
+[2026-03-17T14:59:12] [INIT] online_tick begin
+[2026-03-17T14:59:12] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:59:12] [INIT] online_tick worker end
+[2026-03-17T14:59:12] [INIT] Run callback: _render_online
+[2026-03-17T14:59:17] [INIT] online_tick begin
+[2026-03-17T14:59:17] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:59:17] [INIT] Run callback: _render_online
+[2026-03-17T14:59:17] [INIT] online_tick worker end
+[2026-03-17T14:59:22] [INIT] online_tick begin
+[2026-03-17T14:59:22] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:59:22] [INIT] online_tick worker end
+[2026-03-17T14:59:22] [INIT] Run callback: _render_online
+[2026-03-17T14:59:27] [INIT] online_tick begin
+[2026-03-17T14:59:27] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:59:27] [INIT] online_tick worker end
+[2026-03-17T14:59:27] [INIT] Run callback: _render_online
+[2026-03-17T14:59:32] [INIT] online_tick begin
+[2026-03-17T14:59:32] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:59:32] [INIT] online_tick worker end
+[2026-03-17T14:59:32] [INIT] Run callback: _render_online
+[2026-03-17T14:59:37] [INIT] online_tick begin
+[2026-03-17T14:59:37] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:59:37] [INIT] online_tick worker end
+[2026-03-17T14:59:37] [INIT] Run callback: _render_online
+[2026-03-17T14:59:42] [INIT] online_tick begin
+[2026-03-17T14:59:42] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:59:42] [INIT] online_tick worker end
+[2026-03-17T14:59:42] [INIT] Run callback: _render_online
+[2026-03-17T14:59:47] [INIT] online_tick begin
+[2026-03-17T14:59:47] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:59:47] [INIT] online_tick worker end
+[2026-03-17T14:59:47] [INIT] Run callback: _render_online
+[2026-03-17T14:59:52] [INIT] online_tick begin
+[2026-03-17T14:59:52] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:59:52] [INIT] online_tick worker end
+[2026-03-17T14:59:52] [INIT] Run callback: _render_online
+[2026-03-17T14:59:57] [INIT] online_tick begin
+[2026-03-17T14:59:57] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T14:59:57] [INIT] online_tick worker end
+[2026-03-17T14:59:57] [INIT] Run callback: _render_online
+[2026-03-17T15:00:02] [INIT] online_tick begin
+[2026-03-17T15:00:02] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:00:02] [INIT] online_tick worker end
+[2026-03-17T15:00:02] [INIT] Run callback: _render_online
+[2026-03-17T15:00:07] [INIT] online_tick begin
+[2026-03-17T15:00:07] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:00:07] [INIT] Run callback: _render_online
+[2026-03-17T15:00:07] [INIT] online_tick worker end
+[2026-03-17T15:00:12] [INIT] online_tick begin
+[2026-03-17T15:00:12] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:00:12] [INIT] online_tick worker end
+[2026-03-17T15:00:12] [INIT] Run callback: _render_online
+[2026-03-17T15:00:18] [INIT] Process start
+[2026-03-17T15:00:18] [INIT] CTk theme configured
+[2026-03-17T15:00:24] [INIT] LoginScreen: login pressed
+[2026-03-17T15:00:24] [INIT] LoginScreen: login success
+[2026-03-17T15:00:24] [INIT] _on_login start (username=emmy)
+[2026-03-17T15:00:24] [INIT] GameEngine loaded
+[2026-03-17T15:00:24] [INIT] Sound initialized
+[2026-03-17T15:00:24] [INIT] Window deiconified
+[2026-03-17T15:00:24] [INIT] Building UI
+[2026-03-17T15:00:24] [INIT] _build_ui begin
+[2026-03-17T15:00:25] [INIT] Lazy build tab: 🎲 Roll
+[2026-03-17T15:00:25] [INIT] Lazy built tab: 🎲 Roll
+[2026-03-17T15:00:25] [INIT] _build_ui end
+[2026-03-17T15:00:25] [INIT] UI built; refreshing core startup
+[2026-03-17T15:00:25] [INIT] Core startup refresh begin
+[2026-03-17T15:00:25] [INIT] Refresh step: top_bar
+[2026-03-17T15:00:25] [INIT] Refresh done: top_bar
+[2026-03-17T15:00:25] [INIT] Refresh step: roll_info
+[2026-03-17T15:00:25] [INIT] Refresh done: roll_info
+[2026-03-17T15:00:25] [INIT] Refresh step: live_status
+[2026-03-17T15:00:25] [INIT] Refresh done: live_status
+[2026-03-17T15:00:25] [INIT] Core startup refresh end
+[2026-03-17T15:00:25] [INIT] Core startup refresh complete
+[2026-03-17T15:00:25] [INIT] Registered final sync
+[2026-03-17T15:00:25] [INIT] Stable mode: skipped auto daily + anim + slow tick
+[2026-03-17T15:00:25] [INIT] Scheduled online refresh/polling
+[2026-03-17T15:00:25] [INIT] _on_login complete
+[2026-03-17T15:00:25] [INIT] App instance created; entering mainloop
+[2026-03-17T15:00:26] [INIT] Deferred online refresh begin
+[2026-03-17T15:00:26] [INIT] Deferred online refresh end
+[2026-03-17T15:00:26] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:00:26] [INIT] Schedule callback in 0ms: <lambda>
+[2026-03-17T15:00:26] [INIT] Run callback: _render_online
+[2026-03-17T15:00:26] [INIT] Run callback: <lambda>
+[2026-03-17T15:00:32] [INIT] online_tick begin
+[2026-03-17T15:00:32] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:00:32] [INIT] online_tick worker end
+[2026-03-17T15:00:32] [INIT] Run callback: _render_online
+[2026-03-17T15:00:32] [INIT] Lazy build tab: 🌍 Online
+[2026-03-17T15:00:32] [INIT] Lazy built tab: 🌍 Online
+[2026-03-17T15:00:32] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:00:32] [INIT] Run callback: _render_online
+[2026-03-17T15:00:37] [INIT] online_tick begin
+[2026-03-17T15:00:37] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:00:37] [INIT] online_tick worker end
+[2026-03-17T15:00:37] [INIT] Run callback: _render_online
+[2026-03-17T15:00:42] [INIT] online_tick begin
+[2026-03-17T15:00:42] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:00:42] [INIT] online_tick worker end
+[2026-03-17T15:00:42] [INIT] Run callback: _render_online
+[2026-03-17T15:00:42] [INIT] Lazy build tab: 🤝 Friends
+[2026-03-17T15:00:42] [INIT] Lazy built tab: 🤝 Friends
+[2026-03-17T15:00:43] [INIT] Schedule callback in 0ms: <lambda>
+[2026-03-17T15:00:43] [INIT] Run callback: <lambda>
+[2026-03-17T15:00:47] [INIT] online_tick begin
+[2026-03-17T15:00:47] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:00:47] [INIT] online_tick worker end
+[2026-03-17T15:00:47] [INIT] Run callback: _render_online
+[2026-03-17T15:00:52] [INIT] online_tick begin
+[2026-03-17T15:00:52] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:00:52] [INIT] online_tick worker end
+[2026-03-17T15:00:52] [INIT] Run callback: _render_online
+[2026-03-17T15:00:57] [INIT] online_tick begin
+[2026-03-17T15:00:57] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:00:57] [INIT] online_tick worker end
+[2026-03-17T15:00:57] [INIT] Run callback: _render_online
+[2026-03-17T15:01:02] [INIT] online_tick begin
+[2026-03-17T15:01:02] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:01:02] [INIT] online_tick worker end
+[2026-03-17T15:01:02] [INIT] Run callback: _render_online
+[2026-03-17T15:01:07] [INIT] online_tick begin
+[2026-03-17T15:01:07] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:01:07] [INIT] online_tick worker end
+[2026-03-17T15:01:07] [INIT] Run callback: _render_online
+[2026-03-17T15:01:12] [INIT] online_tick begin
+[2026-03-17T15:01:12] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:01:12] [INIT] online_tick worker end
+[2026-03-17T15:01:12] [INIT] Run callback: _render_online
+[2026-03-17T15:01:17] [INIT] online_tick begin
+[2026-03-17T15:01:17] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:01:17] [INIT] online_tick worker end
+[2026-03-17T15:01:17] [INIT] Run callback: _render_online
+[2026-03-17T15:01:22] [INIT] online_tick begin
+[2026-03-17T15:01:22] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:01:22] [INIT] online_tick worker end
+[2026-03-17T15:01:22] [INIT] Run callback: _render_online
+[2026-03-17T15:01:27] [INIT] online_tick begin
+[2026-03-17T15:01:27] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:01:27] [INIT] online_tick worker end
+[2026-03-17T15:01:27] [INIT] Run callback: _render_online
+[2026-03-17T15:01:32] [INIT] online_tick begin
+[2026-03-17T15:01:32] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:01:32] [INIT] online_tick worker end
+[2026-03-17T15:01:32] [INIT] Run callback: _render_online
+[2026-03-17T15:01:37] [INIT] online_tick begin
+[2026-03-17T15:01:37] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:01:37] [INIT] online_tick worker end
+[2026-03-17T15:01:37] [INIT] Run callback: _render_online
+[2026-03-17T15:01:42] [INIT] online_tick begin
+[2026-03-17T15:01:42] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:01:42] [INIT] online_tick worker end
+[2026-03-17T15:01:42] [INIT] Run callback: _render_online
+[2026-03-17T15:01:47] [INIT] online_tick begin
+[2026-03-17T15:01:47] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:01:47] [INIT] online_tick worker end
+[2026-03-17T15:01:47] [INIT] Run callback: _render_online
+[2026-03-17T15:01:52] [INIT] online_tick begin
+[2026-03-17T15:01:52] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:01:52] [INIT] Run callback: _render_online
+[2026-03-17T15:01:52] [INIT] online_tick worker end
+[2026-03-17T15:01:57] [INIT] online_tick begin
+[2026-03-17T15:01:57] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:01:57] [INIT] Run callback: _render_online
+[2026-03-17T15:01:57] [INIT] online_tick worker end
+[2026-03-17T15:02:02] [INIT] online_tick begin
+[2026-03-17T15:02:02] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:02:02] [INIT] online_tick worker end
+[2026-03-17T15:02:02] [INIT] Run callback: _render_online
+[2026-03-17T15:02:07] [INIT] online_tick begin
+[2026-03-17T15:02:07] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:02:07] [INIT] online_tick worker end
+[2026-03-17T15:02:07] [INIT] Run callback: _render_online
+[2026-03-17T15:02:12] [INIT] online_tick begin
+[2026-03-17T15:02:12] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:02:12] [INIT] online_tick worker end
+[2026-03-17T15:02:12] [INIT] Run callback: _render_online
+[2026-03-17T15:02:17] [INIT] online_tick begin
+[2026-03-17T15:02:17] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:02:17] [INIT] Run callback: _render_online
+[2026-03-17T15:02:17] [INIT] online_tick worker end
+[2026-03-17T15:02:22] [INIT] online_tick begin
+[2026-03-17T15:02:22] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:02:22] [INIT] online_tick worker end
+[2026-03-17T15:02:22] [INIT] Run callback: _render_online
+[2026-03-17T15:02:27] [INIT] online_tick begin
+[2026-03-17T15:02:27] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:02:27] [INIT] online_tick worker end
+[2026-03-17T15:02:27] [INIT] Run callback: _render_online
+[2026-03-17T15:02:32] [INIT] online_tick begin
+[2026-03-17T15:02:32] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:02:32] [INIT] online_tick worker end
+[2026-03-17T15:02:32] [INIT] Run callback: _render_online
+[2026-03-17T15:02:37] [INIT] online_tick begin
+[2026-03-17T15:02:37] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:02:37] [INIT] online_tick worker end
+[2026-03-17T15:02:37] [INIT] Run callback: _render_online
+[2026-03-17T15:02:42] [INIT] online_tick begin
+[2026-03-17T15:02:42] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:02:42] [INIT] online_tick worker end
+[2026-03-17T15:02:42] [INIT] Run callback: _render_online
+[2026-03-17T15:02:47] [INIT] online_tick begin
+[2026-03-17T15:02:47] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:02:47] [INIT] online_tick worker end
+[2026-03-17T15:02:47] [INIT] Run callback: _render_online
+[2026-03-17T15:02:52] [INIT] online_tick begin
+[2026-03-17T15:02:52] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:02:52] [INIT] online_tick worker end
+[2026-03-17T15:02:52] [INIT] Run callback: _render_online
+[2026-03-17T15:02:57] [INIT] online_tick begin
+[2026-03-17T15:02:57] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:02:57] [INIT] online_tick worker end
+[2026-03-17T15:02:57] [INIT] Run callback: _render_online
+[2026-03-17T15:02:58] [INIT] on_close called
+[2026-03-17T15:02:58] [INIT] final_sync begin
+[2026-03-17T15:02:59] [INIT] final_sync: cloud unavailable
+[2026-03-17T15:02:59] [INIT] destroy app
+[2026-03-17T15:02:59] [INIT] Mainloop exited
+[2026-03-17T15:02:59] [INIT] final_sync begin
+[2026-03-17T15:02:59] [INIT] final_sync: cloud unavailable
+[2026-03-17T15:03:08] [INIT] Process start
+[2026-03-17T15:03:08] [INIT] CTk theme configured
+[2026-03-17T15:03:08] [INIT] HTTP API TLS verify failed; switched to insecure TLS fallback
+[2026-03-17T15:05:14] [INIT] App instance created; entering mainloop
+[2026-03-17T15:05:14] [INIT] Mainloop exited
+[2026-03-17T15:05:16] [INIT] Process start
+[2026-03-17T15:05:16] [INIT] CTk theme configured
+[2026-03-17T15:05:17] [INIT] HTTP API TLS verify failed; switched to insecure TLS fallback
+[2026-03-17T15:05:26] [INIT] LoginScreen: login pressed
+[2026-03-17T15:05:26] [INIT] LoginScreen: login success
+[2026-03-17T15:05:26] [INIT] _on_login start (username=emmy)
+[2026-03-17T15:05:27] [INIT] GameEngine loaded
+[2026-03-17T15:05:27] [INIT] Cloud state applied
+[2026-03-17T15:05:27] [INIT] Sound initialized
+[2026-03-17T15:05:27] [INIT] Window deiconified
+[2026-03-17T15:05:27] [INIT] Building UI
+[2026-03-17T15:05:27] [INIT] _build_ui begin
+[2026-03-17T15:05:27] [INIT] Lazy build tab: 🎲 Roll
+[2026-03-17T15:05:27] [INIT] Lazy built tab: 🎲 Roll
+[2026-03-17T15:05:27] [INIT] _build_ui end
+[2026-03-17T15:05:27] [INIT] UI built; refreshing core startup
+[2026-03-17T15:05:27] [INIT] Core startup refresh begin
+[2026-03-17T15:05:27] [INIT] Refresh step: top_bar
+[2026-03-17T15:05:27] [INIT] Refresh done: top_bar
+[2026-03-17T15:05:27] [INIT] Refresh step: roll_info
+[2026-03-17T15:05:27] [INIT] Refresh done: roll_info
+[2026-03-17T15:05:27] [INIT] Refresh step: live_status
+[2026-03-17T15:05:27] [INIT] Refresh done: live_status
+[2026-03-17T15:05:27] [INIT] Core startup refresh end
+[2026-03-17T15:05:27] [INIT] Core startup refresh complete
+[2026-03-17T15:05:27] [INIT] Registered final sync
+[2026-03-17T15:05:27] [INIT] Stable mode: skipped auto daily + anim + slow tick
+[2026-03-17T15:05:27] [INIT] Scheduled online refresh/polling
+[2026-03-17T15:05:27] [INIT] _on_login complete
+[2026-03-17T15:05:27] [INIT] App instance created; entering mainloop
+[2026-03-17T15:05:28] [INIT] Deferred online refresh begin
+[2026-03-17T15:05:28] [INIT] Deferred online refresh end
+[2026-03-17T15:05:29] [INIT] Lazy build tab: 🌍 Online
+[2026-03-17T15:05:29] [INIT] Lazy built tab: 🌍 Online
+[2026-03-17T15:05:30] [INIT] Schedule callback in 0ms: <lambda>
+[2026-03-17T15:05:30] [INIT] Run callback: <lambda>
+[2026-03-17T15:05:30] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:05:30] [INIT] Run callback: _render_online
+[2026-03-17T15:05:31] [INIT] Schedule callback in 0ms: _render_online
+[2026-03-17T15:05:31] [INIT] Run callback: _render_online

@@ -1,0 +1,33 @@
+{
+  "level": 1,
+  "xp": 11,
+  "coins": 102,
+  "shards": 0,
+  "total_rolls": 1,
+  "pity": 1,
+  "pity_counter": 1,
+  "rebirths": 0,
+  "pvp_wins": 0,
+  "pvp_losses": 0,
+  "lucky_rolls": 0,
+  "lucky_rolls_remaining": 0,
+  "daily_claim_date": "",
+  "daily_streak": 0,
+  "roll_chests_claimed": 0,
+  "pvp_streak": 0,
+  "total_boss_wins": 0,
+  "total_rift_wins": 0,
+  "total_wins": 0,
+  "total_losses": 0,
+  "best_rarity": "Uncommon",
+  "highest_rarity_pulled": "Uncommon",
+  "equipped_title": null,
+  "equipped_rarity": null,
+  "inventory": {
+    "Green Fang": 1
+  },
+  "collection": [
+    "Green Fang"
+  ],
+  "battle_titles": []
+}
